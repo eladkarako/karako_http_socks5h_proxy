@@ -1,21 +1,39 @@
 [package]
+authors = ["Elad Karako <eladkarako@gmail.com>"]
+categories = ["command-line-utilities", "network-programming"]
+description = "http-socks5h proxy (dns resolution on remote)."
+documentation = "https://github.com/eladkarako/karako_http_socks5h_proxy#readme"
+edition = "2024"
+homepage = "https://github.com/eladkarako/karako_http_socks5h_proxy"
+keywords = ["http", "socks5h", "proxy", "cli", "forward-proxy"]
+license = "MIT"
 name = "karako_http_socks5h_proxy"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.70.0"
+readme = "README.md"
+repository = "https://github.com/eladkarako/karako_http_socks5h_proxy"
+rust-version = "1.93.0"
+version = "26.9.30"
+
 
 [dependencies]
-tokio = { version = "1.53.1", features = ["full"] }
-hyper = { version = "1.11.1", features = ["full"] }
-http-body-util = "0.1.5"
-hyper-util = { version = "0.1.21", features = ["tokio"] }
 bytes = "1.12.1"
 clap = { version = "4.6.7", features = ["derive"] }
-log = "0.4.34"
 env_logger = "0.11.11"
 http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.11.1", features = ["full"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+log = "0.4.34"
+tokio = { version = "1.53.1", features = ["full"] }
 tokio-socks = "0.5.3"
 
+
 [profile.release]
-opt-level = 3
-lto = true
+codegen-units = 1    # Better optimisation (single codegen unit)
+debug = false        # No debug info
+incremental = false  # Disable incremental compilation (cleaner builds)
+lto = true           # Link‑time optimisation
+opt-level = "z"      # “z” = maximum size reduction (equivalent to -C opt-level=s)
+panic = "abort"      # Remove unwinding tables
+rpath = false        # Don't embed runtime library paths
+strip = true         # Strip symbols (requires rustc 1.56+)
+
