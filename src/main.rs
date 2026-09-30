@@ -17,19 +17,46 @@ use tokio::{
 use tokio_socks::tcp::Socks5Stream;
 
 #[derive(Parser, Debug)]
-#[command(name = "karako_http_socks5h_proxy")]
-#[command(version = "0.1.0")]
+#[command(name = env!("CARGO_PKG_NAME"))]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(author = env!("CARGO_PKG_AUTHORS"))]
+#[command(about = env!("CARGO_PKG_DESCRIPTION"))]
+#[command(
+    long_about = "A lightweight HTTP-to-SOCKS5H proxy that forwards HTTP requests through a SOCKS5 proxy server with remote DNS resolution."
+)]
+#[command(after_help = "EXAMPLES:\n  \
+    # Run proxy on localhost:8080, forwarding to SOCKS5 at 192.168.1.100:1080\n  \
+    karako_http_socks5h_proxy -u 192.168.1.100:1080\n  \n  \
+    # Run proxy on 0.0.0.0:3128 with debug logging\n  \
+    karako_http_socks5h_proxy -l 0.0.0.0 -p 3128 -u 192.168.1.100:1080 --log-level debug\n  \n  \
+    # Verify proxy is working\n  \
+    curl -x http://127.0.0.1:8080 http://example.com")]
 struct Args {
-    #[arg(short, long, default_value = "127.0.0.1")]
+    #[arg(
+        short,
+        long,
+        default_value = "127.0.0.1",
+        help = "Address to listen on"
+    )]
     listen_addr: String,
 
-    #[arg(short, long, default_value = "8080")]
+    #[arg(
+        short,
+        long,
+        default_value = "8080",
+        help = "Port to listen on"
+    )]
     listen_port: u16,
 
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        help = "Upstream SOCKS5 proxy address (format: host:port)",
+        value_name = "HOST:PORT"
+    )]
     upstream_socks5: String,
 
-    #[arg(short, long, default_value = "info")]
+    #[arg(long, default_value = "info", help = "Logging level")]
     log_level: LogLevelValueEnum,
 }
 
@@ -68,7 +95,11 @@ async fn main()
         .filter_level(args.log_level.to_level_filter())
         .try_init()?;
 
-    info!("Starting karako HTTP-SOCKS5H proxy");
+    info!(
+        "Starting {} v{}",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
+    );
 
     let (host, port) = parse_upstream(&args.upstream_socks5)?;
     let upstream_addr = SocketAddr::new(host, port);
@@ -76,6 +107,7 @@ async fn main()
     let config = ProxyConfig { upstream_socks5: upstream_addr };
 
     let config = Arc::new(config);
+
     let listen_addr =
         format!("{}:{}", args.listen_addr, args.listen_port);
     let listener = TcpListener::bind(&listen_addr).await?;
@@ -159,12 +191,9 @@ fn extract_host_port(
 ) -> Result<(String, u16), Box<dyn std::error::Error + Send + Sync>>
 {
     let uri = req.uri();
-
     let host =
         uri.host().ok_or("No host in request URI")?.to_string();
-
     let port = uri.port_u16().unwrap_or(80);
-
     Ok((host, port))
 }
 
@@ -206,7 +235,6 @@ fn build_http_request(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let path =
         uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
-
     let mut request =
         format!("{} {} {:?}\r\n", method, path, version);
 
