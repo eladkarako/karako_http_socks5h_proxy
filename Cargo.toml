@@ -1,0 +1,21 @@
+[package]
+name = "karako_http_socks5h_proxy"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+
+[dependencies]
+tokio = { version = "1.53.1", features = ["full"] }
+hyper = { version = "1.11.1", features = ["full"] }
+http-body-util = "0.1.5"
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+bytes = "1.12.1"
+clap = { version = "4.6.7", features = ["derive"] }
+log = "0.4.34"
+env_logger = "0.11.11"
+http = "1.5.0"
+tokio-socks = "0.5.3"
+
+[profile.release]
+opt-level = 3
+lto = true
