@@ -27,6 +27,11 @@ tokio = { version = "1.53.1", features = ["full"] }
 tokio-socks = "0.5.3"
 
 
+[build-dependencies]
+toml = "1.1.6"
+winres = "0.1.12"
+
+
 [profile.release]
 codegen-units = 1    # Better optimisation (single codegen unit)
 debug = false        # No debug info
