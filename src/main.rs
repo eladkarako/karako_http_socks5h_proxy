@@ -1,324 +1,256 @@
+use bytes::Bytes;
 use clap::{Parser, ValueEnum};
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, server::conn::http1, service::service_fn, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
-use log::{debug, error, info, warn};
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::TcpListener;
+use log::{info, warn};
+use std::{net::{IpAddr, SocketAddr}, sync::Arc};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpListener};
+use tokio_socks::tcp::Socks5Stream;
 
-mod socks5;
-use socks5::Socks5Client;
 
 #[derive(Parser, Debug)]
 #[command(name = "karako_http_socks5h_proxy")]
 #[command(version = "0.1.0")]
-#[command(author = "Your Name <your.email@example.com>")]
-#[command(about = "HTTP proxy that forwards requests through a SOCKS5 upstream server")]
-#[command(long_about = "This is a simple HTTP proxy that:\n  \
-    - Listens on a local HTTP port\n  \
-    - Accepts HTTP CONNECT and request forwarding\n  \
-    - Tunnels all traffic through a SOCKS5 upstream server\n  \
-    - Preserves all request headers and body content")]
 struct Args {
-    #[arg(short = 'p', long, default_value = "12345")]
+    #[arg(short, long, default_value = "127.0.0.1")]
+    listen_addr: String,
+
+    #[arg(short, long, default_value = "8080")]
     listen_port: u16,
 
-    #[arg(short = 'h', long, default_value = "127.0.0.1")]
-    upstream_host: String,
+    #[arg(short, long)]
+    upstream_socks5: String,
 
-    #[arg(short = 'u', long, default_value = "9050")]
-    upstream_port: u16,
-
-    #[arg(short = 'l', long, default_value = "info")]
+    #[arg(short, long, default_value = "info")]
     log_level: LogLevelValueEnum,
-
-    #[arg(short = 'v', long)]
-    verbose: bool,
-
-    #[arg(short = 'D', long)]
-    debug: bool,
-
-    #[arg(long)]
-    log_bodies: bool,
-
-    #[arg(long, default_value = "1024")]
-    log_body_limit: usize,
-
-    #[arg(long)]
-    no_banner: bool,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum)]
 enum LogLevelValueEnum {
-    Off,
-    Error,
-    Warn,
-    Info,
-    Debug,
     Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
 }
 
 impl LogLevelValueEnum {
-    fn to_log_level(&self) -> log::LevelFilter {
+    fn to_level_filter(&self) -> log::LevelFilter {
         match self {
-            LogLevelValueEnum::Off => log::LevelFilter::Off,
-            LogLevelValueEnum::Error => log::LevelFilter::Error,
-            LogLevelValueEnum::Warn => log::LevelFilter::Warn,
-            LogLevelValueEnum::Info => log::LevelFilter::Info,
-            LogLevelValueEnum::Debug => log::LevelFilter::Debug,
             LogLevelValueEnum::Trace => log::LevelFilter::Trace,
+            LogLevelValueEnum::Debug => log::LevelFilter::Debug,
+            LogLevelValueEnum::Info => log::LevelFilter::Info,
+            LogLevelValueEnum::Warn => log::LevelFilter::Warn,
+            LogLevelValueEnum::Error => log::LevelFilter::Error,
         }
     }
 }
 
 #[derive(Clone)]
 struct ProxyConfig {
-    upstream_host: String,
-    upstream_port: u16,
-    log_bodies: bool,
-    log_body_limit: usize,
+    upstream_socks5: SocketAddr,
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
 
-    let log_level = if args.debug {
-        log::LevelFilter::Trace
-    } else if args.verbose {
-        log::LevelFilter::Debug
-    } else {
-        args.log_level.to_log_level()
-    };
+    env_logger::Builder::new()
+        .filter_level(args.log_level.to_level_filter())
+        .try_init()?;
 
-    env_logger::Builder::from_default_env()
-        .filter_level(log_level)
-        .format_timestamp_millis()
-        .try_init()
-        .ok();
+    info!("Starting karako HTTP-SOCKS5H proxy");
 
-    if !args.no_banner {
-        eprintln!("╔═══════════════════════════════════════════════════════════╗");
-        eprintln!("║    karako_http_socks5h_proxy v0.1.0                      ║");
-        eprintln!("║    HTTP-to-SOCKS5H Proxy                                 ║");
-        eprintln!("╚═══════════════════════════════════════════════════════════╝");
-        eprintln!();
-    }
-
-    info!(
-        "Starting proxy with configuration: listen=127.0.0.1:{}, upstream={}:{}",
-        args.listen_port, args.upstream_host, args.upstream_port
-    );
-
-    if args.verbose {
-        debug!("Verbose mode enabled");
-    }
-
-    if args.debug {
-        debug!("Debug mode enabled");
-    }
-
-    if args.log_bodies {
-        debug!(
-            "Request/response body logging enabled (limit: {} bytes)",
-            args.log_body_limit
-        );
-    }
+    let (host, port) = parse_upstream(&args.upstream_socks5)?;
+    let upstream_addr = SocketAddr::new(host, port);
 
     let config = ProxyConfig {
-        upstream_host: args.upstream_host.clone(),
-        upstream_port: args.upstream_port,
-        log_bodies: args.log_bodies,
-        log_body_limit: args.log_body_limit,
+        upstream_socks5: upstream_addr,
     };
 
     let config = Arc::new(config);
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.listen_port));
-    let listener = TcpListener::bind(addr).await?;
+    let listen_addr = format!("{}:{}", args.listen_addr, args.listen_port);
+    let listener = TcpListener::bind(&listen_addr).await?;
 
-    info!("✓ Proxy listening on http://{}", addr);
-    eprintln!("Proxy listening on http://{}", addr);
-    eprintln!(
-        "Forwarding through SOCKS5 upstream {}:{}",
-        args.upstream_host, args.upstream_port
-    );
-    eprintln!("Log level: {:?}", log_level);
-    eprintln!();
+    info!("Listening on {}", listen_addr);
+    info!("Upstream SOCKS5: {}:{}", host, port);
+    eprintln!("Proxy listening on http://{}", listen_addr);
 
     loop {
-        let (socket, _) = listener.accept().await?;
-        let io = TokioIo::new(socket);
-        let config = Arc::clone(&config);
+        let (stream, peer_addr) = listener.accept().await?;
+        let config = config.clone();
 
-        tokio::spawn(async move {
+        tokio::task::spawn(async move {
+            let io = hyper_util::rt::TokioIo::new(stream);
             let service = service_fn(move |req| {
-                let config = Arc::clone(&config);
+                let config = config.clone();
                 handle_request(req, config)
             });
 
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                error!("Connection error: {}", err);
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service)
+                .await
+            {
+                warn!("Error serving connection from {}: {}", peer_addr, e);
             }
         });
     }
 }
 
-fn extract_host_port(req: &Request<Incoming>) -> (String, u16) {
-    debug!("Extracting target host and port from request");
-
-    if let Some(host_header) = req.headers().get("host") {
-        if let Ok(host_str) = host_header.to_str() {
-            debug!("Found Host header: {}", host_str);
-
-            if let Some((host, port_str)) = host_str.rsplit_once(':') {
-                if let Ok(port) = port_str.parse::<u16>() {
-                    debug!("Extracted host={}, port={}", host, port);
-                    return (host.to_string(), port);
-                }
-            }
-
-            debug!("Using Host header without explicit port (defaulting to 80)");
-            return (host_str.to_string(), 80);
-        }
-    }
-
-    let uri = req.uri();
-    debug!("Extracting from URI: {}", uri);
-
-    let host = uri.host().unwrap_or("127.0.0.1");
-    let port = uri.port_u16().unwrap_or(80);
-
-    debug!("Extracted from URI: host={}, port={}", host, port);
-
-    (host.to_string(), port)
-}
-
 async fn handle_request(
     req: Request<Incoming>,
     config: Arc<ProxyConfig>,
-) -> Result<Response<String>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
+    let (host, port) = extract_host_port(&req)?;
+
     let method = req.method().clone();
     let uri = req.uri().clone();
     let version = req.version();
-
-    info!("→ {} {} (HTTP/{:?})", method, uri, version);
-
     let headers = req.headers().clone();
-    let (host, port) = extract_host_port(&req);
 
-    debug!("Target destination: {}:{}", host, port);
+    // Consume the body
+    let body = req.into_body().collect().await?.to_bytes();
 
-    let body = req.into_body();
-    let body_bytes = body.collect().await?.to_bytes();
+    // Connect via SOCKS5
+    let socks_stream = Socks5Stream::connect(
+        config.upstream_socks5,
+        (host, port),
+    ).await
+        .map_err(|e| format!("SOCKS5 connection failed: {}", e))?;
 
-    if config.log_bodies && !body_bytes.is_empty() {
-        let body_str = String::from_utf8_lossy(&body_bytes);
-        let truncated = if body_bytes.len() > config.log_body_limit {
-            format!(
-                "{}... (truncated, total: {} bytes)",
-                &body_str[..config.log_body_limit.min(body_bytes.len())],
-                body_bytes.len()
-            )
-        } else {
-            body_str.to_string()
-        };
-        debug!("Request body: {}", truncated);
-    } else if !body_bytes.is_empty() {
-        debug!(
-            "Request body size: {} bytes (use --log-bodies to see content)",
-            body_bytes.len()
-        );
+    let (mut reader, mut writer) = tokio::io::split(socks_stream.into_inner());
+
+    // Build and send HTTP request
+    let http_request = build_http_request(&method, &uri, version, &headers, &body)?;
+    writer.write_all(&http_request).await?;
+    writer.flush().await?;
+
+    // Read response with timeout
+    let response_data = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        read_full_response(&mut reader),
+    )
+        .await
+        .unwrap_or_else(|_| Ok(Vec::new()))?;
+
+    // Parse and return response
+    parse_http_response(&response_data)
+}
+
+fn extract_host_port(
+    req: &Request<Incoming>,
+) -> Result<(String, u16), Box<dyn std::error::Error + Send + Sync>> {
+    let uri = req.uri();
+
+    let host = uri
+        .host()
+        .ok_or("No host in request URI")?
+        .to_string();
+
+    let port = uri.port_u16().unwrap_or(80);
+
+    Ok((host, port))
+}
+
+fn parse_upstream(upstream: &str) -> Result<(IpAddr, u16), Box<dyn std::error::Error + Send + Sync>> {
+    let parts: Vec<&str> = upstream.split(':').collect();
+    if parts.len() != 2 {
+        return Err("Upstream must be in format 'host:port'".into());
     }
 
-    debug!(
-        "Connecting to SOCKS5 upstream {}:{} for target {}:{}",
-        config.upstream_host, config.upstream_port, host, port
-    );
-
-    let upstream_ip: std::net::IpAddr = match config.upstream_host.parse() {
-        Ok(ip) => ip,
+    // Try parsing as IPv6 address first (handles both IPv4 and IPv6)
+    let host = match parts[0].parse::<IpAddr>() {
+        Ok(addr) => addr,
         Err(_) => {
-            error!("Invalid upstream host IP: {}", config.upstream_host);
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body("Invalid SOCKS5 server address".to_string())?);
+            // If not an IP, resolve via DNS
+            let addrs = std::net::ToSocketAddrs::to_socket_addrs(
+                &format!("{}:0", parts[0])
+            )?;
+            addrs.into_iter().next()
+                .ok_or("Could not resolve upstream host")?
+                .ip()
         }
     };
 
-    let socks_client = match Socks5Client::new(upstream_ip, config.upstream_port).await {
-        Ok(client) => {
-            info!("✓ SOCKS5 connection established");
-            client
-        }
-        Err(e) => {
-            error!("SOCKS5 connection failed: {:?}", e);
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(format!("SOCKS5 connection failed: {:?}", e))?);
-        }
-    };
+    let port = parts[1].parse::<u16>()?;
+    Ok((host, port))
+}
 
-    let request_line = format!(
-        "{} {} HTTP/1.1\r\n",
-        method,
-        uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/")
-    );
+fn build_http_request(
+    method: &hyper::Method,
+    uri: &hyper::Uri,
+    version: hyper::Version,
+    headers: &hyper::HeaderMap,
+    body: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let path = uri.path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("/");
 
-    debug!("Sending request line: {}", request_line.trim());
+    let mut request = format!("{} {} {:?}\r\n", method, path, version);
 
-    let mut request = request_line;
-
-    for (name, value) in headers.iter() {
-        let value_str = match value.to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                warn!("Skipping header with invalid UTF-8: {:?}", name);
-                continue;
-            }
-        };
-
-        debug!("Forwarding header: {}: {}", name, value_str);
-        request.push_str(&format!("{}: {}\r\n", name, value_str));
+    for (name, value) in headers {
+        request.push_str(&format!(
+            "{}: {}\r\n",
+            name,
+            value.to_str()?
+        ));
     }
 
-    request.push_str(&format!("Content-Length: {}\r\n", body_bytes.len()));
     request.push_str("\r\n");
+    let mut result = request.into_bytes();
+    result.extend_from_slice(body);
 
-    let request_bytes = bytes::Bytes::from(request.into_bytes());
+    Ok(result)
+}
 
-    match socks_client.forward_request(&host, port, request_bytes).await {
-        Ok(response_bytes) => {
-            if config.log_bodies && !response_bytes.is_empty() {
-                let response_str = String::from_utf8_lossy(&response_bytes);
-                let truncated = if response_bytes.len() > config.log_body_limit {
-                    format!(
-                        "{}... (truncated, total: {} bytes)",
-                        &response_str[..config.log_body_limit.min(response_bytes.len())],
-                        response_bytes.len()
-                    )
-                } else {
-                    response_str.to_string()
-                };
-                debug!("Response data: {}", truncated);
-            } else if !response_bytes.is_empty() {
-                debug!(
-                    "Response size: {} bytes (use --log-bodies to see content)",
-                    response_bytes.len()
-                );
-            }
+async fn read_full_response(
+    reader: &mut tokio::io::ReadHalf<tokio::net::TcpStream>,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut response = Vec::new();
+    let mut buf = [0u8; 4096];
 
-            info!("✓ Response forwarded ({} bytes)", response_bytes.len());
-
-            Ok(Response::new(
-                String::from_utf8_lossy(&response_bytes).to_string(),
-            ))
+    loop {
+        match reader.read(&mut buf).await {
+            Ok(0) => break, // EOF
+            Ok(n) => response.extend_from_slice(&buf[..n]),
+            Err(e) => return Err(Box::new(e)),
         }
-        Err(e) => {
-            error!("Failed to forward request: {:?}", e);
-            Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(format!("Failed to forward request: {:?}", e))?)
-        }
+    }
+
+    Ok(response)
+}
+
+fn parse_http_response(
+    data: &[u8],
+) -> Result<Response<Full<Bytes>>, Box<dyn std::error::Error + Send + Sync>> {
+    if data.is_empty() {
+        return Ok(Response::builder()
+            .status(StatusCode::GATEWAY_TIMEOUT)
+            .body(Full::new(Bytes::from("Gateway Timeout")))?);
+    }
+
+    // Simple response parsing: find headers/body split
+    let response_str = String::from_utf8_lossy(data);
+
+    if let Some(split_idx) = response_str.find("\r\n\r\n") {
+        let headers_part = &response_str[..split_idx];
+        let body_part = &data[split_idx + 4..];
+
+        // Extract status code from first line
+        let status_line = headers_part.lines().next().unwrap_or("HTTP/1.1 200 OK");
+        let status_code = status_line
+            .split(' ')
+            .nth(1)
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(200);
+
+        Ok(Response::builder()
+            .status(StatusCode::from_u16(status_code)?)
+            .body(Full::new(Bytes::copy_from_slice(body_part)))?)
+    } else {
+        Ok(Response::builder()
+            .status(StatusCode::BAD_GATEWAY)
+            .body(Full::new(Bytes::from("Bad Gateway")))?)
     }
 }
