@@ -1,48 +1,45 @@
 [package]
 authors = ["Elad Karako <eladkarako@gmail.com>"]
 categories = ["command-line-utilities", "network-programming"]
-description = "http-socks5h proxy (dns resolution on remote)."
+description = "HTTP-SOCKS5H proxy with DNS resolution on remote"
 documentation = "https://github.com/eladkarako/karako_http_socks5h_proxy#readme"
 edition = "2024"
 homepage = "https://github.com/eladkarako/karako_http_socks5h_proxy"
-keywords = ["http", "socks5h", "proxy", "cli", "forward-proxy"]
+keywords = ["cli", "forward-proxy", "http", "proxy", "socks5h"]
 license = "MIT"
 name = "karako_http_socks5h_proxy"
 readme = "README.md"
 repository = "https://github.com/eladkarako/karako_http_socks5h_proxy"
 rust-version = "1.93.0"
-version = "26.9.30"
+version = "26.10.1"
 
 
 [dependencies]
-bytes = "1.12.1"
-clap = { version = "4.6.7", features = ["derive"] }
-env_logger = "0.11.11"
-futures = "0.3.34"  # for join_all in concurrent test
-http = "1.5.0"
-http-body-util = "0.1.5"
-hyper = { version = "1.11.1", features = ["full"] }
-hyper-util = { version = "0.1.21", features = ["tokio"] }
-log = "0.4.34"
-tokio = { version = "1.53.1", features = ["full"] }
-tokio-socks = "0.5.3"
-
-[dev-dependencies]
-tokio-test = "0.4.6"
+bytes = "1.12.1"                                           # Efficient byte buffer management
+clap = { version = "4.6.7", features = ["derive"] }        # CLI argument parsing with derive macros
+env_logger = "0.11.11"                                     # Logging implementation (outputs to stderr/stdout)
+futures = "0.3.34"                                         # Async utilities (join_all for concurrent task handling)
+http = "1.5.0"                                             # HTTP types (status codes, headers, methods, versions)
+http-body-util = "0.1.5"                                   # Body utilities (BodyExt trait, collect, to_bytes)
+hyper = { version = "1.11.1", features = ["full"] }        # HTTP/1.1 server and client implementation
+hyper-util = { version = "0.1.21", features = ["tokio"] }  # Connection builders and executors for hyper
+log = "0.4.34"                                             # Logging facade (structured logging interface)
+tokio = { version = "1.53.1", features = ["full"] }        # Async runtime for networking, timers, task spawning
+tokio-socks = "0.5.3"                                      # SOCKS5 protocol client for tunneling connections
 
 
 [build-dependencies]
-toml = "1.1.6"
-winres = "0.1.12"
+toml = "1.1.6"                                             # TOML parsing for build scripts
+winres = "0.1.12"                                          # Windows resource file handling (exe metadata, icons, version info)
 
 
 [profile.release]
-codegen-units = 1    # Better optimisation (single codegen unit)
-debug = false        # No debug info
-incremental = false  # Disable incremental compilation (cleaner builds)
-lto = true           # Link‑time optimisation
-opt-level = "z"      # “z” = maximum size reduction (equivalent to -C opt-level=s)
-panic = "abort"      # Remove unwinding tables
-rpath = false        # Don't embed runtime library paths
-strip = true         # Strip symbols (requires rustc 1.56+)
+codegen-units = 1                                          # Single unit for better optimization and binary size
+debug = false                                              # Strip debug symbols for smaller binary
+incremental = false                                        # Disable incremental compilation for cleaner builds
+lto = true                                                 # Link-time optimization for better performance
+opt-level = "z"                                            # Maximum optimization for binary size
+panic = "abort"                                            # Replace unwinding with abort (smaller binary, faster panics)
+rpath = false                                              # Don't embed runtime library search paths
+strip = true                                               # Strip all symbols from final binary
 
