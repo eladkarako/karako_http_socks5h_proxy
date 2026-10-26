@@ -2,14 +2,14 @@
 authors = ["Elad Karako <eladkarako@gmail.com>"]
 categories = ["command-line-utilities"]
 description = "HTTP proxy that tunnels through SOCKS5h"
-documentation = "https://github.com/eladkarako/http_socks5h_tcp_tunnel#readme"
+documentation = "https://github.com/eladkarako/karako_http_socks5h_proxy#readme"
 edition = "2024"
-homepage = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
+homepage = "https://github.com/eladkarako/karako_http_socks5h_proxy"
 keywords = ["http-proxy", "socks5h", "tunnel", "cli"]
 license = "MIT"
-name = "http_socks5h_tcp_tunnel"
+name = "karako_http_socks5h_proxy"
 readme = "README.md"
-repository = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
+repository = "https://github.com/eladkarako/karako_http_socks5h_proxy"
 rust-version = "1.93.0"
 version = "26.10.27"
 
