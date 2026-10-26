@@ -121,7 +121,7 @@ async fn handle_http_request(
     let mut buf = [0u8; 8192];
 
     // Read until we find the end of headers
-    let mut headers_end = None;
+    let headers_end;
     loop {
         let n = timeout(
             Duration::from_secs(60),
