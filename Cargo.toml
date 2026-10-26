@@ -11,7 +11,7 @@ name = "http_socks5h_tcp_tunnel"
 readme = "README.md"
 repository = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
 rust-version = "1.93.0"
-version = "26.10.26"
+version = "26.10.27"
 
 [dependencies]
 anyhow = { version = "1.0.104" }
