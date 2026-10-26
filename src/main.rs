@@ -199,7 +199,6 @@ async fn handle_http_request(
         .unwrap())
 }
 const TUNNEL_BUFFER_SIZE: usize = 65536; // 64 KB instead of 8192
-
 async fn tunnel_bidirectional(
     client: &mut TcpStream,
     upstream: &mut TcpStream,
@@ -211,12 +210,23 @@ async fn tunnel_bidirectional(
         let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
         loop {
             match client_read.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => upstream_write.write_all(&buf[..n]).await?,
-                Err(e) => return Err(e),
+                Ok(0) => {
+                    let _ = upstream_write.shutdown().await;
+                    break;
+                }
+                Ok(n) => {
+                    if let Err(e) =
+                        upstream_write.write_all(&buf[..n]).await
+                    {
+                        return Err(e);
+                    }
+                }
+                Err(e) => {
+                    let _ = upstream_write.shutdown().await;
+                    return Err(e);
+                }
             }
         }
-        let _ = upstream_write.shutdown().await;
         Ok::<_, std::io::Error>(())
     };
 
@@ -224,18 +234,28 @@ async fn tunnel_bidirectional(
         let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
         loop {
             match upstream_read.read(&mut buf).await {
-                Ok(0) => break,
-                Ok(n) => client_write.write_all(&buf[..n]).await?,
-                Err(e) => return Err(e),
+                Ok(0) => {
+                    let _ = client_write.shutdown().await;
+                    break;
+                }
+                Ok(n) => {
+                    if let Err(e) =
+                        client_write.write_all(&buf[..n]).await
+                    {
+                        return Err(e);
+                    }
+                }
+                Err(e) => {
+                    let _ = client_write.shutdown().await;
+                    return Err(e);
+                }
             }
         }
-        let _ = client_write.shutdown().await;
         Ok::<_, std::io::Error>(())
     };
 
     tokio::try_join!(client_to_upstream, upstream_to_client)
         .context("Bidirectional tunnel failed")?;
-
     Ok(())
 }
 
