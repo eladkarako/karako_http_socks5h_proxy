@@ -14,7 +14,7 @@ note: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstrea
 
 binaries provided, supports many OS and architectures.
 
-still under development so many debug information..
+still under development so a lot of debug information is written..
 
 <a href="https://paypal.me/31adkarak0" target="_blank" rel="noopener noreferrer">
   <img src="resources/logos/paypal1.svg" alt="Donate via PayPal">
