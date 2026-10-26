@@ -1,5 +1,9 @@
 #makes sure end-of-line for Windows specific files is kept `\r\n` .
 
+*.xml         text      eol=crlf
+
+*.svg         text      eol=crlf
+
 *.cmd         text      eol=crlf
 
 *.manifest    text      eol=crlf
