@@ -2,7 +2,7 @@
 
 [build]
 incremental = false
-jobs        = 6
+jobs        = 8
 
 #---------------------------------- Windows MSVC x86 (enable large address space, remove unreferenced code/data, identical code folding (merge duplicate code))
 [target.i686-pc-windows-msvc]
