@@ -333,15 +333,15 @@ async fn send_socks5_connect_request(
         "Hostname too long: {} bytes",
         host.len()
     );
-    let mut connect_req = vec![0u8; 8 + host.len()];
-    connect_req[0] = SOCKS5_VERSION;
-    connect_req[1] = SOCKS5_CMD_CONNECT;
-    connect_req[2] = 0;
-    connect_req[3] = SOCKS5_ATYP_DOMAIN;
-    connect_req[4] = host.len() as u8;
-    connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes());
-    connect_req[5 + host.len()] = (port >> 8) as u8;
-    connect_req[6 + host.len()] = (port & 0xff) as u8;
+    let mut connect_req = vec![0u8; 5 + host.len() + 2]; // allocates 17 bytes
+    connect_req[0] = SOCKS5_VERSION; // 1. VER (SOCKS version)
+    connect_req[1] = SOCKS5_CMD_CONNECT; // 2. CMD (CONNECT)
+    connect_req[2] = 0; // 3. RSV (reserved)
+    connect_req[3] = SOCKS5_ATYP_DOMAIN; // 4. ATYP (address type)
+    connect_req[4] = host.len() as u8; // 5. DLEN (domain length)
+    connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes()); // hostname (10 for github.com)
+    connect_req[5 + host.len()] = (port >> 8) as u8; // 6. + 7. Port Encoding in Big-Endian Format (16-bit)
+    connect_req[6 + host.len()] = (port & 0xff) as u8; // 8080 -> 0x1F90 -> [0x1F, 0x90]
 
     // DEBUG: Print exact request bytes
     eprintln!("[SOCKS5] Host: '{}' (len={})", host, host.len());
