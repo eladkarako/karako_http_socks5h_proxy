@@ -199,63 +199,159 @@ async fn handle_http_request(
         .unwrap())
 }
 const TUNNEL_BUFFER_SIZE: usize = 65536; // 64 KB instead of 8192
+
 async fn tunnel_bidirectional(
     client: &mut TcpStream,
     upstream: &mut TcpStream,
+    client_addr: &std::net::SocketAddr,
+    host: &str,
+    port: u16,
 ) -> Result<()> {
     let (mut client_read, mut client_write) = client.split();
     let (mut upstream_read, mut upstream_write) = upstream.split();
 
-    let client_to_upstream = async {
-        let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
-        loop {
-            match client_read.read(&mut buf).await {
-                Ok(0) => {
-                    let _ = upstream_write.shutdown().await;
-                    break;
-                }
-                Ok(n) => {
-                    if let Err(e) =
-                        upstream_write.write_all(&buf[..n]).await
-                    {
+    let client_addr_str = client_addr.to_string();
+    let host = host.to_string();
+
+    let client_to_upstream = {
+        let client_addr_str = client_addr_str.clone();
+        let host = host.clone();
+        async move {
+            let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
+            let mut total_sent = 0usize;
+            loop {
+                match client_read.read(&mut buf).await {
+                    Ok(0) => {
+                        eprintln!(
+                            "[{}->{}:{}] Client closed write (sent {} bytes total)",
+                            client_addr_str, host, port, total_sent
+                        );
+                        if let Err(e) =
+                            upstream_write.shutdown().await
+                        {
+                            eprintln!(
+                                "[{}->{}:{}] Error shutting down upstream write: {}",
+                                client_addr_str, host, port, e
+                            );
+                        } else {
+                            eprintln!(
+                                "[{}->{}:{}] Upstream write shut down gracefully",
+                                client_addr_str, host, port
+                            );
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        total_sent += n;
+                        eprintln!(
+                            "[{}->{}:{}] Client -> Upstream: {} bytes (total: {})",
+                            client_addr_str,
+                            host,
+                            port,
+                            n,
+                            total_sent
+                        );
+                        if let Err(e) =
+                            upstream_write.write_all(&buf[..n]).await
+                        {
+                            eprintln!(
+                                "[{}->{}:{}] Error writing to upstream: {}",
+                                client_addr_str, host, port, e
+                            );
+                            let _ = upstream_write.shutdown().await;
+                            return Err(e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[{}->{}:{}] Error reading from client: {}",
+                            client_addr_str, host, port, e
+                        );
+                        let _ = upstream_write.shutdown().await;
                         return Err(e);
                     }
                 }
-                Err(e) => {
-                    let _ = upstream_write.shutdown().await;
-                    return Err(e);
-                }
             }
+            Ok::<_, std::io::Error>(())
         }
-        Ok::<_, std::io::Error>(())
     };
 
-    let upstream_to_client = async {
-        let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
-        loop {
-            match upstream_read.read(&mut buf).await {
-                Ok(0) => {
-                    let _ = client_write.shutdown().await;
-                    break;
-                }
-                Ok(n) => {
-                    if let Err(e) =
-                        client_write.write_all(&buf[..n]).await
-                    {
+    let upstream_to_client = {
+        let client_addr_str = client_addr_str.clone();
+        let host = host.clone();
+        async move {
+            let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
+            let mut total_received = 0usize;
+            loop {
+                match upstream_read.read(&mut buf).await {
+                    Ok(0) => {
+                        eprintln!(
+                            "[{}->{}:{}] Upstream closed (received {} bytes total)",
+                            client_addr_str,
+                            host,
+                            port,
+                            total_received
+                        );
+                        if let Err(e) = client_write.shutdown().await
+                        {
+                            eprintln!(
+                                "[{}->{}:{}] Error shutting down client write: {}",
+                                client_addr_str, host, port, e
+                            );
+                        } else {
+                            eprintln!(
+                                "[{}->{}:{}] Client write shut down gracefully",
+                                client_addr_str, host, port
+                            );
+                        }
+                        break;
+                    }
+                    Ok(n) => {
+                        total_received += n;
+                        eprintln!(
+                            "[{}->{}:{}] Upstream -> Client: {} bytes (total: {})",
+                            client_addr_str,
+                            host,
+                            port,
+                            n,
+                            total_received
+                        );
+                        if let Err(e) =
+                            client_write.write_all(&buf[..n]).await
+                        {
+                            eprintln!(
+                                "[{}->{}:{}] Error writing to client: {}",
+                                client_addr_str, host, port, e
+                            );
+                            let _ = client_write.shutdown().await;
+                            return Err(e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[{}->{}:{}] Error reading from upstream: {}",
+                            client_addr_str, host, port, e
+                        );
+                        let _ = client_write.shutdown().await;
                         return Err(e);
                     }
                 }
-                Err(e) => {
-                    let _ = client_write.shutdown().await;
-                    return Err(e);
-                }
             }
+            Ok::<_, std::io::Error>(())
         }
-        Ok::<_, std::io::Error>(())
     };
 
-    tokio::try_join!(client_to_upstream, upstream_to_client)
-        .context("Bidirectional tunnel failed")?;
+    eprintln!(
+        "[{}->{}:{}] Tunnel bidirectional started",
+        client_addr_str, host, port
+    );
+    let result =
+        tokio::try_join!(client_to_upstream, upstream_to_client);
+    eprintln!(
+        "[{}->{}:{}] Tunnel bidirectional ended",
+        client_addr_str, host, port
+    );
+    result.context("Bidirectional tunnel failed")?;
     Ok(())
 }
 
@@ -264,24 +360,28 @@ async fn handle_connect_tunnel(
     host: &str,
     port: u16,
     upstream_port: u16,
+    client_addr: std::net::SocketAddr, // Add this parameter
 ) -> Result<()> {
-    eprintln!("CONNECT tunnel requested for {}:{}", host, port);
-
+    eprintln!(
+        "CONNECT tunnel requested for {}:{} from {}",
+        host, port, client_addr
+    );
     let mut upstream_stream =
         connect_to_socks5(upstream_port).await?;
     socks5_handshake(&mut upstream_stream, host, port).await?;
-
     eprintln!("CONNECT tunnel established for {}:{}", host, port);
-
-    // Send 200 Connection Established
     client
         .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .await
         .context("Failed to send CONNECT response")?;
-
-    // Bidirectional tunnel
-    tunnel_bidirectional(client, &mut upstream_stream).await?;
-
+    tunnel_bidirectional(
+        client,
+        &mut upstream_stream,
+        &client_addr,
+        host,
+        port,
+    )
+        .await?;
     Ok(())
 }
 
@@ -335,6 +435,8 @@ async fn connect_to_socks5(upstream_port: u16) -> Result<TcpStream> {
     upstream_stream
         .set_nodelay(true)
         .context("Failed to set TCP_NODELAY")?;
+
+    eprintln!("[SOCKS5] Connected to {}", addr);
 
     Ok(upstream_stream)
 }
@@ -576,6 +678,7 @@ async fn main() -> Result<()> {
                                                         host,
                                                         port,
                                                         upstream_port,
+                                                        addr,
                                                     )
                                                     .await
                                                     {
