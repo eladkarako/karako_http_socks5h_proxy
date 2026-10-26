@@ -1,20 +1,20 @@
-# http_socks5h_tcp_tunnel
+# `karako_http_socks5h_proxy`
 
-a tiny perfectly working HTTP proxy for all OS,  
-allows you to connect to a `SOCKS5h` upstream server,  
-supports both HTTP1.1 `CONNECT` as well as native HTTP2.  
+gives your programs a way to use an upstream `SOCKS5h` server,  
+including its built-in DNS resolution on remote. meaning your own machine's DNS/HOSTS will not be used.
 
-you can use it with `aria2c`, `ffmpeg`, Firefox, and even Edge browser!
+you can use it with aria2c, yt-dlp, ffmpeg, wget, curl (although it has `SOCKS5h` support),  
+native batch-files scripts with `HTTPS_PROXY` and `HTTP_PROXY`. 
 
-it is built with Rust, and uses battle-ready crates.
+most programs will use HTTP1.1 `CONNECT`, and once the TCP tunnel established it supports any traffic  
+that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).  
+you can set firefox and edge browsers to use it as HTTP proxy, and it works very well.
 
-it can run on Windows, linux and even native Android (NDK).
+note: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstream server and this program must run on same machine.
 
-note: you can set the ports but it is hard-coded to only work on `localhost`.  
+binaries provided, supports many OS and architectures.
 
-note: you should test it before using it in production (licensed MIT).
-
-note: it works well but it is still under active development, so, a lot of logs..
+still under development so many debug information..
 
 <a href="https://paypal.me/31adkarak0" target="_blank" rel="noopener noreferrer">
   <img src="resources/logos/paypal1.svg" alt="Donate via PayPal">
