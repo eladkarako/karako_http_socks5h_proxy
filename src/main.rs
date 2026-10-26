@@ -379,13 +379,13 @@ async fn send_socks5_connect_request(
         "[SOCKS5] [4] DLEN=0x{:02X} ({})",
         connect_req[4], connect_req[4]
     );
-    eprintln!("[SOCKS5] [5..{}] DNAME={}", 5 + host.len() - 1, host);
+    eprintln!("[SOCKS5] [5..{}] DNAME={}", 4 + host.len(), host);
     eprintln!(
         "[SOCKS5] [{}..{}] PORT=[0x{:02X}, 0x{:02X}]",
-        6 + host.len() - 1,
-        6 + host.len(),
-        connect_req[6 + host.len()],
-        connect_req[7 + host.len()]
+        5 + host.len(),
+        5 + host.len() + 1,
+        connect_req[5 + host.len()],
+        connect_req[5 + host.len() + 1]
     );
 
     eprintln!(
@@ -871,15 +871,12 @@ async fn handle_client_connection(
     addr: std::net::SocketAddr,
     upstream_port: u16,
 ) -> Result<()> {
-    // Peek at the first bytes to detect protocol
     let mut peek_buf = [0u8; 24];
     match socket.peek(&mut peek_buf).await {
         Ok(n) if n >= 4 => {
             let peek_str =
                 String::from_utf8_lossy(&peek_buf[..n.min(24)]);
-
             if peek_str.starts_with("PRI * HTTP/2.0") {
-                // HTTP/2 with Preface
                 eprintln!(
                     "[DETECT] HTTP/2 preface detected for {}",
                     addr
@@ -893,7 +890,6 @@ async fn handle_client_connection(
             } else if peek_str.starts_with("HTTP/")
                 || peek_str.contains("CONNECT ")
             {
-                // HTTP/1.1 or HTTP/1.0
                 eprintln!("[DETECT] HTTP/1.1 detected for {}", addr);
                 handle_http1_client_connection(
                     socket,
@@ -902,10 +898,30 @@ async fn handle_client_connection(
                 )
                     .await
             } else {
-                bail!("Unknown protocol from {}", addr);
+                bail!(
+                    "Unknown protocol from {}: {:?}",
+                    addr,
+                    &peek_buf[..n.min(16)]
+                )
             }
         }
-        _ => bail!("Failed to peek protocol from {}", addr),
+        Ok(n) if n > 0 => {
+            bail!(
+                "Failed to peek protocol from {} (got {} bytes, need >= 4)",
+                addr,
+                n
+            )
+        }
+        Ok(_) => {
+            eprintln!(
+                "[DETECT] Empty connection from {} (closed immediately)",
+                addr
+            );
+            Ok(())
+        }
+        Err(e) => {
+            bail!("Failed to peek protocol from {}: {}", addr, e)
+        }
     }
 }
 
