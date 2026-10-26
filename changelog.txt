@@ -1,3 +1,8 @@
+26.10.26
+* re-implementing HTTP1.1 `CONNECT`, adding native HTTP1.1->HTTP2 upgrade.
+* isolating connections, and properly supporting SOCKS5h CONNECT tunnel, now even Edge browser works with it.
+* still under development. some debug information. unoptimized, some data is read to memory instead of being streamed directly (..later).
+
 26.10.10
 * structure change for build to improve speed on linux. 
 * using Microsoft's mimalloc, instead of jema, also not for Android nor Windows OS. 

@@ -1,17 +1,17 @@
 [package]
-name = "http_socks5h_tcp_tunnel"
-version = "26.10.10"
-edition = "2024"
 authors = ["Elad Karako <eladkarako@gmail.com>"]
 categories = ["command-line-utilities"]
 description = "HTTP proxy that tunnels through SOCKS5h"
 documentation = "https://github.com/eladkarako/http_socks5h_tcp_tunnel#readme"
+edition = "2024"
 homepage = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
 keywords = ["http-proxy", "socks5h", "tunnel", "cli"]
 license = "MIT"
+name = "http_socks5h_tcp_tunnel"
 readme = "README.md"
 repository = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
 rust-version = "1.93.0"
+version = "26.10.26"
 
 [dependencies]
 crossterm = { version = "0.29.0", features = ["windows", "libc", "events"] }
