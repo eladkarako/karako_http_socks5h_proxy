@@ -326,20 +326,67 @@ async fn send_socks5_connect_request(
     host: &str,
     port: u16,
 ) -> Result<()> {
+    eprintln!("[SOCKS5] Domain bytes: {:?}", host.as_bytes());
+
     ensure!(
         host.len() <= MAX_HOSTNAME_LEN,
         "Hostname too long: {} bytes",
         host.len()
     );
-    let mut connect_req = vec![0u8; 6 + host.len()];
+    let mut connect_req = vec![0u8; 8 + host.len()];
     connect_req[0] = SOCKS5_VERSION;
     connect_req[1] = SOCKS5_CMD_CONNECT;
     connect_req[2] = 0;
     connect_req[3] = SOCKS5_ATYP_DOMAIN;
     connect_req[4] = host.len() as u8;
     connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes());
-    connect_req.push((port >> 8) as u8);
-    connect_req.push((port & 0xff) as u8);
+    connect_req[5 + host.len()] = (port >> 8) as u8;
+    connect_req[6 + host.len()] = (port & 0xff) as u8;
+
+    // DEBUG: Print exact request bytes
+    eprintln!("[SOCKS5] Host: '{}' (len={})", host, host.len());
+    eprintln!(
+        "[SOCKS5] Port: {} (0x{:04X}) -> bytes: [0x{:02X}, 0x{:02X}]",
+        port,
+        port,
+        (port >> 8) as u8,
+        (port & 0xff) as u8
+    );
+    eprintln!(
+        "[SOCKS5] Full CONNECT request ({} bytes):",
+        connect_req.len()
+    );
+
+    // Print in readable format
+    let mut hex_str = String::new();
+    for (i, byte) in connect_req.iter().enumerate() {
+        hex_str.push_str(&format!("0x{:02X} ", byte));
+        if (i + 1) % 8 == 0 {
+            eprintln!("  [{}..{}] {}", i - 7, i, hex_str);
+            hex_str.clear();
+        }
+    }
+    if !hex_str.is_empty() {
+        eprintln!("  [rest] {}", hex_str);
+    }
+
+    // Print breakdown
+    eprintln!("[SOCKS5] [0] VER=0x{:02X}", connect_req[0]);
+    eprintln!("[SOCKS5] [1] CMD=0x{:02X}", connect_req[1]);
+    eprintln!("[SOCKS5] [2] RSV=0x{:02X}", connect_req[2]);
+    eprintln!("[SOCKS5] [3] ATYP=0x{:02X}", connect_req[3]);
+    eprintln!(
+        "[SOCKS5] [4] DLEN=0x{:02X} ({})",
+        connect_req[4], connect_req[4]
+    );
+    eprintln!("[SOCKS5] [5..{}] DNAME={}", 5 + host.len() - 1, host);
+    eprintln!(
+        "[SOCKS5] [{}..{}] PORT=[0x{:02X}, 0x{:02X}]",
+        6 + host.len() - 1,
+        6 + host.len(),
+        connect_req[6 + host.len()],
+        connect_req[7 + host.len()]
+    );
 
     eprintln!(
         "[SOCKS5] Sending CONNECT request ({} bytes) for {}:{}",
@@ -347,6 +394,7 @@ async fn send_socks5_connect_request(
         host,
         port
     );
+
     timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
         stream.write_all(&connect_req),
@@ -354,6 +402,12 @@ async fn send_socks5_connect_request(
         .await
         .context("SOCKS5 CONNECT write timeout")?
         .context("Failed to send SOCKS5 CONNECT")?;
+
+    stream
+        .flush()
+        .await
+        .context("Failed to flush SOCKS5 CONNECT")?;
+    eprintln!("[SOCKS5] CONNECT request sent successfully");
     Ok(())
 }
 
@@ -369,6 +423,14 @@ async fn receive_socks5_connect_response(
         .await
         .context("SOCKS5 CONNECT response read timeout")?
         .context("Failed to read SOCKS5 CONNECT response")?;
+
+    eprintln!(
+        "[SOCKS5] Raw response bytes: [0x{:02X}, 0x{:02X}, 0x{:02X}, 0x{:02X}]",
+        resp_header[0],
+        resp_header[1],
+        resp_header[2],
+        resp_header[3]
+    );
 
     eprintln!(
         "[SOCKS5] CONNECT response: ver={}, rep={}, rsv={}, atyp={}",

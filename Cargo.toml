@@ -19,7 +19,7 @@ anyhow = { version = "1.0.104" }
 clap = { version = "4.6.7", features = ["derive"] }
 tokio = { version = "1.54.1", features = ["full"] }
 socket2 = { version = "0.6.5" }
-hyper = { version = "1.12.0", features = ["full", "http2", "client"] }
+hyper = { version = "1.12.0", features = ["full", "http2", "http1", "client"] }
 http = { version = "1.5.0" }
 http-body-util = { version = "0.1.5" }
 bytes = { version = "1.12.1", features = ["extra-platforms"] }
