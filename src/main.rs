@@ -1,14 +1,21 @@
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use bytes::Bytes;
 use clap::Parser;
-use socket2::{Domain, Socket, Type};
+use http::{Request, Response, StatusCode};
+use http_body_util::Full;
+
+use hyper::body::Incoming;
+use std::convert::Infallible;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 use tokio::time::{timeout, Duration};
+
 #[derive(Parser)]
 #[command(author, about, long_about = None)]
 struct Args {
     #[arg(short = 'p', long, default_value = "8765")]
     http_port: u16,
+
     #[arg(short = 'u', long, default_value = "5678")]
     upstream_port: u16,
 }
@@ -25,123 +32,208 @@ const SOCKS5_ERRORS: &[&str] = &[
     "Command not supported",
     "Address type not supported",
 ];
-const BUFFER_SIZE: usize = 8192;
-const SOCKET_BUFFER_SIZE: usize = 2_097_152; // 2 MB
+
 const MAX_HOSTNAME_LEN: usize = 255;
 const SOCKS5_CONNECT_MAX_LEN: usize = 262;
 
-fn create_listener(port: u16) -> Result<TcpListener> {
-    let socket = Socket::new(Domain::IPV4, Type::STREAM, None)
-        .context("Failed to create socket")?;
-    socket
-        .set_send_buffer_size(SOCKET_BUFFER_SIZE)
-        .context("Failed to set send buffer size")?;
-    socket
-        .set_recv_buffer_size(SOCKET_BUFFER_SIZE)
-        .context("Failed to set recv buffer size")?;
+async fn handle_http_request(
+    mut req: Request<Incoming>,
+    upstream_port: u16,
+) -> Result<Response<Full<Bytes>>> {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let host = extract_host(&uri, &req)?;
+    let port = extract_port(&uri);
 
-    let addr = std::net::SocketAddrV4::new(
-        std::net::Ipv4Addr::LOCALHOST,
-        port,
-    );
-    socket
-        .bind(&std::net::SocketAddr::V4(addr).into())
-        .context("Failed to bind socket")?;
-    socket.listen(128).context("Failed to listen on socket")?;
+    eprintln!("{} {} (host: {}:{})", method, uri, host, port);
 
-    let std_listener = std::net::TcpListener::from(socket);
-    std_listener
-        .set_nonblocking(true)
-        .context("Failed to set non-blocking")?;
-    TcpListener::from_std(std_listener)
-        .context("Failed to create async listener")
-}
-
-#[inline]
-fn configure_stream(stream: &TcpStream) -> Result<()> {
-    stream.set_nodelay(true).context("Failed to set TCP_NODELAY")?;
-    Ok(())
-}
-
-#[inline]
-fn parse_url(url: &str) -> Result<(&str, u16)> {
-    let url = url
-        .strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .unwrap_or(url);
-
-    let host_port = url
-        .split('/')
-        .next()
-        .ok_or_else(|| anyhow!("No host:port found in URL"))?
-        .trim();
-
-    match host_port.split_once(':') {
-        Some((h, p)) => {
-            let port =
-                p.parse::<u16>().context("Invalid port number")?;
-            Ok((h, port))
-        }
-        None => Ok((host_port, 80)),
+    // Handle CONNECT method for HTTPS tunneling
+    if method == hyper::Method::CONNECT {
+        return handle_connect_tunnel(&host, port, upstream_port)
+            .await;
     }
-}
 
-async fn read_and_parse_http_request(
-    client: &mut TcpStream,
-    buf: &mut [u8; BUFFER_SIZE],
-) -> Result<(String, u16, usize)> {
+    // For regular HTTP requests, read the entire body first
+    let body_bytes = read_body(&mut req).await?;
+
+    // Connect to upstream SOCKS5h server and perform handshake
+    let mut upstream_stream =
+        connect_to_socks5(upstream_port).await?;
+    socks5_handshake(&mut upstream_stream, &host, port).await?;
+
+    // Build the HTTP request to send through the tunnel
+    let request_line = format!(
+        "{} {} HTTP/{:?}\r\n",
+        method,
+        req.uri().path_and_query().unwrap_or(&"/".parse().unwrap()),
+        req.version()
+    );
+    let mut request_headers = request_line.into_bytes();
+
+    // Write headers (excluding host and connection headers which we'll set)
+    for (name, value) in req.headers().iter() {
+        let name_str = name.as_str();
+        if name_str.to_lowercase() == "host"
+            || name_str.to_lowercase() == "connection"
+            || name_str.to_lowercase() == "content-length"
+        {
+            continue;
+        }
+        request_headers.extend_from_slice(name_str.as_bytes());
+        request_headers.extend_from_slice(b": ");
+        request_headers.extend_from_slice(value.as_bytes());
+        request_headers.extend_from_slice(b"\r\n");
+    }
+
+    // Add required headers
+    request_headers.extend_from_slice(b"Host: ");
+    request_headers.extend_from_slice(host.as_bytes());
+    if port != 80 {
+        request_headers.extend_from_slice(b":");
+        request_headers
+            .extend_from_slice(port.to_string().as_bytes());
+    }
+    request_headers.extend_from_slice(b"\r\n");
+    request_headers.extend_from_slice(b"Connection: close\r\n");
+
+    if !body_bytes.is_empty() {
+        request_headers.extend_from_slice(b"Content-Length: ");
+        request_headers.extend_from_slice(
+            body_bytes.len().to_string().as_bytes(),
+        );
+        request_headers.extend_from_slice(b"\r\n");
+    }
+
+    request_headers.extend_from_slice(b"\r\n");
+    if !body_bytes.is_empty() {
+        request_headers.extend_from_slice(&body_bytes);
+    }
+
+    // Send the complete HTTP request through SOCKS5 tunnel
+    upstream_stream.write_all(&request_headers).await.context(
+        "Failed to send HTTP request through SOCKS5 tunnel",
+    )?;
+
+    // Read the response
+    let mut response_buf = vec![0u8; 65536];
     let n = timeout(
         Duration::from_secs(60),
-        client.read(buf),
+        upstream_stream.read(&mut response_buf),
     )
         .await
-        .context("Failed (or 60 seconds timeout) to read HTTP request from client")??;
+        .context("Timeout reading response from upstream")??;
 
-    ensure!(n > 0, "Client closed connection without sending data");
+    ensure!(n > 0, "Upstream closed connection without response");
 
-    let request = std::str::from_utf8(&buf[..n])
-        .context("Invalid UTF-8 in request")?;
-    let lines: Vec<&str> = request.lines().collect();
+    // Parse the HTTP response
+    let response_text =
+        String::from_utf8(response_buf[..n].to_vec())
+            .context("Invalid UTF-8 in response")?;
 
-    ensure!(!lines.is_empty(), "Empty HTTP request");
+    // Simple HTTP response parsing (split headers and body)
+    let parts: Vec<&str> = response_text.split("\r\n\r\n").collect();
+    let headers_section = parts[0];
+    let body = if parts.len() > 1 { parts[1] } else { "" };
 
-    let request_line: Vec<&str> =
-        lines[0].split_whitespace().collect();
-    ensure!(
-        request_line.len() >= 2,
-        "Invalid request line: expected at least 2 tokens, got {}",
-        request_line.len()
-    );
+    let lines: Vec<&str> = headers_section.lines().collect();
+    let status_line = lines.first().context("Empty response")?;
+    let status_code: u16 = status_line
+        .split_whitespace()
+        .nth(1)
+        .context("Invalid status line")?
+        .parse()
+        .context("Invalid status code")?;
 
-    let url = request_line[1];
-    let (host, port) = parse_url(url).with_context(|| {
-        format!("Invalid URL in request: '{}'", url)
-    })?;
+    eprintln!("Response status: {}", status_code);
 
-    ensure!(!host.is_empty(), "Empty hostname extracted from URL");
+    let mut response_builder =
+        Response::builder().status(status_code);
 
-    ensure!(
-        host.len() <= MAX_HOSTNAME_LEN,
-        "Hostname too long: {} bytes (max {})",
-        host.len(),
-        MAX_HOSTNAME_LEN
-    );
+    // Copy response headers (skip status line)
+    for line in &lines[1..] {
+        if let Some((key, value)) = line.split_once(':') {
+            response_builder =
+                response_builder.header(key.trim(), value.trim());
+        }
+    }
 
-    Ok((host.to_string(), port, n))
+    Ok(response_builder
+        .body(Full::new(Bytes::from(body.to_string())))
+        .unwrap())
+}
+
+async fn handle_connect_tunnel(
+    host: &str,
+    port: u16,
+    upstream_port: u16,
+) -> Result<Response<Full<Bytes>>> {
+    eprintln!("CONNECT tunnel requested for {}:{}", host, port);
+
+    // For CONNECT, we need to establish a TCP tunnel
+    // This is typically used for HTTPS
+    let mut upstream_stream =
+        connect_to_socks5(upstream_port).await?;
+    socks5_handshake(&mut upstream_stream, host, port).await?;
+
+    eprintln!("CONNECT tunnel established for {}:{}", host, port);
+
+    // Return 200 Connection Established
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .body(Full::new(Bytes::new()))
+        .unwrap())
+}
+
+fn extract_host(
+    uri: &hyper::Uri,
+    req: &Request<Incoming>,
+) -> Result<String> {
+    if let Some(host) = uri.host() {
+        return Ok(host.to_string());
+    }
+
+    // Try to get from Host header
+    if let Some(host_header) = req.headers().get("host") {
+        let host_str =
+            host_header.to_str().context("Invalid Host header")?;
+        if let Some((host, _port)) = host_str.split_once(':') {
+            return Ok(host.to_string());
+        }
+        return Ok(host_str.to_string());
+    }
+
+    bail!("Cannot determine host from request")
+}
+
+fn extract_port(uri: &hyper::Uri) -> u16 {
+    uri.port_u16().unwrap_or(80)
+}
+
+async fn read_body(req: &mut Request<Incoming>) -> Result<Vec<u8>> {
+    use http_body_util::BodyExt;
+
+    let body = req.body_mut();
+    let collected = body
+        .collect()
+        .await
+        .context("Error reading request body")?;
+    Ok(collected.to_bytes().to_vec())
 }
 
 async fn connect_to_socks5(upstream_port: u16) -> Result<TcpStream> {
     let addr = format!("127.0.0.1:{}", upstream_port);
-    let upstream_stream = timeout(
-        Duration::from_secs(30),
-        TcpStream::connect(&addr),
-    ).await
+    let upstream_stream = timeout(Duration::from_secs(30), TcpStream::connect(&addr))
+        .await
         .with_context(|| {
-            format!("Failed (or 30 seconds timeout) to connect to SOCKS5 server at {}", addr)
+            format!(
+                "Failed (or 30 seconds timeout) to connect to SOCKS5 server at {}",
+                addr
+            )
         })??;
 
-    configure_stream(&upstream_stream)
-        .context("Failed to configure SOCKS5 stream")?;
+    upstream_stream
+        .set_nodelay(true)
+        .context("Failed to set TCP_NODELAY")?;
 
     Ok(upstream_stream)
 }
@@ -157,7 +249,7 @@ async fn socks5_handshake(
         upstream_stream.write_all(SOCKS5_GREETING),
     )
         .await
-        .context("Failed (or 30 seconds timeout) to send SOCKS5 greeting to server")??;
+        .context("Failed to send SOCKS5 greeting")??;
 
     // Read greeting response
     let mut resp = [0u8; 2];
@@ -166,42 +258,39 @@ async fn socks5_handshake(
         upstream_stream.read_exact(&mut resp),
     )
         .await
-        .context("Failed (or 30 seconds timeout) to read SOCKS5 greeting response from server")??;
+        .context("Failed to read SOCKS5 greeting response")??;
 
     ensure!(
         resp[0] == 5,
         "Invalid SOCKS5 version in greeting response: {} (expected 5)",
         resp[0]
     );
-
     ensure!(
         resp[1] != 0xff,
         "SOCKS5 server rejected all authentication methods"
     );
 
-    // Build and send connect request
+    // Build CONNECT request
+    ensure!(
+        host.len() <= MAX_HOSTNAME_LEN,
+        "Hostname too long: {} bytes (max {})",
+        host.len(),
+        MAX_HOSTNAME_LEN
+    );
+
     let mut connect_req = [0u8; SOCKS5_CONNECT_MAX_LEN];
     let len = 6 + host.len();
 
-    /* //might be added later, currently assume larger request will be trunked. that's fine.
-    ensure!(
-        len <= SOCKS5_CONNECT_MAX_LEN,
-        "SOCKS5 connect request too large: {} bytes (max {})",
-        len,
-        SOCKS5_CONNECT_MAX_LEN
-    );
-    */
-
-    connect_req[0] = 5;
-    connect_req[1] = 1; // CONNECT
-    connect_req[2] = 0; // reserved
-    connect_req[3] = 3; // DOMAINNAME
+    connect_req[0] = 5; // SOCKS version
+    connect_req[1] = 1; // CONNECT command
+    connect_req[2] = 0; // Reserved
+    connect_req[3] = 3; // DOMAINNAME address type
     connect_req[4] = host.len() as u8;
     connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes());
     connect_req[5 + host.len()] = (port >> 8) as u8;
     connect_req[5 + host.len() + 1] = (port & 0xff) as u8;
 
-    //send connect request
+    // Send CONNECT request
     timeout(
         Duration::from_secs(30),
         upstream_stream.write_all(&connect_req[..len]),
@@ -209,19 +298,19 @@ async fn socks5_handshake(
         .await
         .with_context(|| {
             format!(
-                "Failed (or 30 seconds timeout) to send SOCKS5 connect request for {}:{}",
+                "Failed to send SOCKS5 connect request for {}:{}",
                 host, port
             )
         })??;
 
-    // Read connect response header (4 bytes fixed)
+    // Read CONNECT response header
     let mut resp_header = [0u8; 4];
     timeout(
         Duration::from_secs(30),
         upstream_stream.read_exact(&mut resp_header),
     )
         .await
-        .context("Failed (or 30 seconds timeout) to read SOCKS5 connect response header")??;
+        .context("Failed to read SOCKS5 connect response header")??;
 
     ensure!(
         resp_header[0] == 5,
@@ -240,35 +329,34 @@ async fn socks5_handshake(
         bail!("SOCKS5 connection failed: {}", error_msg);
     }
 
-    // Read address data based on address type
+    // Read bind address (variable length based on address type)
     match resp_header[3] {
         1 => {
-            // IPv4: 4 bytes address + 2 bytes port
+            // IPv4
             let mut addr_port = [0u8; 6];
             timeout(
                 Duration::from_secs(10),
                 upstream_stream.read_exact(&mut addr_port),
-            ).await
+            )
+                .await
                 .context(
-                    "Failed (or 30 seconds timeout) to read SOCKS5 IPv4 address response",
+                    "Failed to read SOCKS5 IPv4 address response",
                 )??;
         }
         3 => {
-            // Domain name: 1 byte length + domain + 2 bytes port
+            // Domain name
             let mut len_byte = [0u8; 1];
             upstream_stream
                 .read_exact(&mut len_byte)
                 .await
                 .context("Failed to read SOCKS5 domain length")?;
             let domain_len = len_byte[0] as usize;
-
             ensure!(
                 domain_len <= MAX_HOSTNAME_LEN,
                 "SOCKS5 response domain too long: {} bytes (max {})",
                 domain_len,
                 MAX_HOSTNAME_LEN
             );
-
             let mut domain_and_port = vec![0u8; domain_len + 2];
             upstream_stream
                 .read_exact(&mut domain_and_port)
@@ -276,7 +364,7 @@ async fn socks5_handshake(
                 .context("Failed to read SOCKS5 domain response")?;
         }
         4 => {
-            // IPv6: 16 bytes address + 2 bytes port
+            // IPv6
             let mut addr_port = [0u8; 18];
             upstream_stream
                 .read_exact(&mut addr_port)
@@ -296,121 +384,9 @@ async fn socks5_handshake(
     Ok(())
 }
 
-async fn relay_traffic(
-    client: TcpStream,
-    upstream_stream: TcpStream,
-    buf: &[u8],
-    n: usize,
-) -> Result<()> {
-    timeout(
-        Duration::from_secs(600),
-        relay_traffic_impl(client, upstream_stream, buf, n),
-    )
-        .await
-        .context("Relay timed out (600 seconds - 10 minutes)")?
-}
-
-async fn relay_traffic_impl(
-    client: TcpStream,
-    mut upstream_stream: TcpStream,
-    buf: &[u8],
-    n: usize,
-) -> Result<()> {
-    ensure!(n > 0, "No HTTP request data to relay (n={})", n);
-
-    // Send the HTTP request through the tunnel
-    upstream_stream.write_all(&buf[..n]).await.context(
-        "Failed to send HTTP request through SOCKS5 tunnel",
-    )?;
-
-    let (mut client_read, mut client_write) = client.into_split();
-    let (mut upstream_read, mut upstream_write) =
-        upstream_stream.into_split();
-
-    // Set up bidirectional copy futures
-    let client_to_upstream =
-        tokio::io::copy(&mut client_read, &mut upstream_write);
-    let upstream_to_client =
-        tokio::io::copy(&mut upstream_read, &mut client_write);
-
-    // Run both directions in parallel to completion
-    let (r1, r2) =
-        tokio::join!(client_to_upstream, upstream_to_client);
-
-    let bytes1 = r1.context("Client→Upstream relay failed")?;
-    eprintln!("Client→Upstream: {} bytes relayed", bytes1);
-
-    let bytes2 = r2.context("Upstream→Client relay failed")?;
-    eprintln!("Upstream→Client: {} bytes relayed", bytes2);
-
-    Ok(())
-}
-
-async fn handle_client(
-    mut client: TcpStream,
-    upstream_port: u16,
-) -> Result<()> {
-    let peer_addr = client
-        .peer_addr()
-        .unwrap_or_else(|_| "unknown".parse().unwrap());
-
-    configure_stream(&client).with_context(|| {
-        format!(
-            "Failed to configure client stream from {}",
-            peer_addr
-        )
-    })?;
-
-    let mut buf = [0u8; BUFFER_SIZE];
-    let (host, port, n) =
-        read_and_parse_http_request(&mut client, &mut buf)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to parse HTTP request from {}",
-                    peer_addr
-                )
-            })?;
-
-    let mut upstream_stream = connect_to_socks5(upstream_port)
-        .await
-        .with_context(|| {
-            format!(
-                "Failed to connect to SOCKS5 for {}:{} (client: {})",
-                host, port, peer_addr
-            )
-        })?;
-
-    socks5_handshake(&mut upstream_stream, &host, port)
-        .await
-        .with_context(|| {
-            format!(
-                "SOCKS5 handshake failed for {}:{} (client: {})",
-                host, port, peer_addr
-            )
-        })?;
-
-    eprintln!(
-        "Tunneling {}:{} for client {}",
-        host, port, peer_addr
-    );
-
-    relay_traffic(client, upstream_stream, &buf, n)
-        .await
-        .with_context(|| {
-            format!(
-                "Relay failed for {}:{} (client: {})",
-                host, port, peer_addr
-            )
-        })?;
-
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
     ensure!(
         args.http_port != args.upstream_port,
         "HTTP port ({}) cannot be the same as upstream port ({})",
@@ -418,8 +394,14 @@ async fn main() -> Result<()> {
         args.upstream_port
     );
 
-    let listener =
-        create_listener(args.http_port).with_context(|| {
+    let addr: std::net::SocketAddr =
+        format!("127.0.0.1:{}", args.http_port)
+            .parse()
+            .context("Failed to parse listen address")?;
+
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| {
             format!(
                 "Failed to bind HTTP listener on 127.0.0.1:{}",
                 args.http_port
@@ -438,8 +420,7 @@ async fn main() -> Result<()> {
     let shutdown = std::sync::Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
 
-    // Spawn signal handler WITHOUT awaiting
-    let signal_handle = tokio::spawn(async move {
+    let _signal_handle = tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         eprintln!("\nShutting down gracefully...");
         shutdown_clone.notify_waiters();
@@ -450,11 +431,32 @@ async fn main() -> Result<()> {
             _ = shutdown.notified() => break,
             result = listener.accept() => {
                 match result {
-                    Ok((client, addr)) => {
+                    Ok((socket, addr)) => {
                         let upstream_port = args.upstream_port;
                         tokio::spawn(async move {
-                            if let Err(e) = handle_client(client, upstream_port).await {
-                                eprintln!("Client error from {}: {:#}", addr, e);
+                            let io = hyper_util::rt::TokioIo::new(socket);
+
+                            let service = hyper::service::service_fn(move |req: Request<Incoming>| {
+                                let upstream_port = upstream_port;
+                                async move {
+                                    match handle_http_request(req, upstream_port).await {
+                                        Ok(response) => Ok::<_, Infallible>(response),
+                                        Err(e) => {
+                                            eprintln!("Request handling error: {:#}", e);
+                                            Ok(Response::builder()
+                                                .status(StatusCode::BAD_GATEWAY)
+                                                .body(Full::new(Bytes::from(format!("Proxy error: {}", e))))
+                                                .unwrap())
+                                        }
+                                    }
+                                }
+                            });
+
+                            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                                .serve_connection(io, service)
+                                .await
+                            {
+                                eprintln!("HTTP connection error from {}: {}", addr, e);
                             }
                         });
                     }
@@ -466,8 +468,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Await signal handler after loop exits
-    let _ = signal_handle.await;
     eprintln!("Stopped accepting connections.");
     Ok(())
 }

@@ -4,7 +4,7 @@ version = "26.10.10"
 edition = "2024"
 authors = ["Elad Karako <eladkarako@gmail.com>"]
 categories = ["command-line-utilities"]
-description = "a tiny HTTP-SOCKS5h TCP tunnel."
+description = "HTTP proxy that tunnels through SOCKS5h"
 documentation = "https://github.com/eladkarako/http_socks5h_tcp_tunnel#readme"
 homepage = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
 keywords = ["http-proxy", "socks5h", "tunnel", "cli"]
@@ -16,11 +16,18 @@ rust-version = "1.93.0"
 [dependencies]
 anyhow = { version = "1.0.104" }
 clap = { version = "4.6.7", features = ["derive"] }
-tokio = { version = "1.53.2", features = ["full"] }
+tokio = { version = "1.54.1", features = ["full"] }
 socket2 = { version = "0.6.5" }
+hyper = { version = "1.12.0", features = ["full"] }
+http = { version = "1.5.0" }
+http-body-util = { version = "0.1.5" }
+bytes = { version = "1.12.1", features = ["extra-platforms"] }
+hickory-resolver = { version = "0.24.4", features = ["tokio"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 
-[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "i686", target_arch = "aarch64")))'.dependencies]
-mimalloc = "0.1.52"                                                 # memory allocation (improved) for specific targets. not Android, not ARM, not Windows.
+
+[target.'cfg(all(target_os="linux",any(target_arch="x86_64",target_arch="i686",target_arch="aarch64")))'.dependencies]
+mimalloc = "0.1.52"
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
 toml = "1.1.8"
