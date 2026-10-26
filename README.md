@@ -17,8 +17,6 @@ note: you should test it before using it in production (licensed MIT).
 note: it works well but it is still under active development, so, a lot of logs..
 
 <a href="https://paypal.me/31adkarak0" target="_blank" rel="noopener noreferrer">
-  <img src="resources/logos/donate.png" alt="Donate via PayPal">
-  <br />
   <img src="resources/logos/paypal1.svg" alt="Donate via PayPal">
   <br />
   <img src="resources/logos/paypal2.png" alt="PayPal Donation">
