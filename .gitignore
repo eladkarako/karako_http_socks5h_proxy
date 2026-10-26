@@ -9,4 +9,7 @@
 /target/
 
 *_minified_*
+
+minified_*
+
 /resources/tor
