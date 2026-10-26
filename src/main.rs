@@ -22,6 +22,12 @@ use tokio::{
     time::{timeout, Duration},
 };
 
+#[cfg(target_os = "windows")]
+const EOL: &str = "\r\n";
+
+#[cfg(not(target_os = "windows"))]
+const EOL: &str = "\n";
+
 const SOCKS5_VERSION: u8 = 5;
 const SOCKS5_CMD_CONNECT: u8 = 1;
 const SOCKS5_ATYP_DOMAIN: u8 = 3;
@@ -970,7 +976,10 @@ async fn main() -> Result<()> {
     let shutdown_clone = shutdown.clone();
     tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-        eprintln!("\nCtrl+C received, shutting down gracefully...");
+        eprintln!(
+            "{}Ctrl+C received, shutting down gracefully...",
+            EOL
+        );
         shutdown_clone.notify_waiters();
     });
 
@@ -979,10 +988,15 @@ async fn main() -> Result<()> {
     {
         let shutdown_clone = shutdown.clone();
         tokio::spawn(async move {
-            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            let mut sigterm = tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::terminate(),
+            )
                 .context("Failed to listen for SIGTERM")?;
             sigterm.recv().await;
-            eprintln!("\nSIGTERM received, shutting down gracefully...");
+            eprintln!(
+                "{}SIGTERM received, shutting down gracefully...",
+                EOL
+            );
             shutdown_clone.notify_waiters();
             Ok::<(), anyhow::Error>(())
         });
@@ -993,9 +1007,14 @@ async fn main() -> Result<()> {
     {
         let shutdown_clone = shutdown.clone();
         tokio::spawn(async move {
-            if let Ok(mut ctrl_break) = tokio::signal::windows::ctrl_break() {
+            if let Ok(mut ctrl_break) =
+                tokio::signal::windows::ctrl_break()
+            {
                 ctrl_break.recv().await;
-                eprintln!("\nCtrl+Break received, shutting down gracefully...");
+                eprintln!(
+                    "{}Ctrl+Break received, shutting down gracefully...",
+                    EOL
+                );
                 shutdown_clone.notify_waiters();
             }
         });
