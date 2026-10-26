@@ -43,8 +43,14 @@ const SOCKS5_ERRORS: &[&str] = &[
     "Address type not supported",
 ];
 
-#[derive(Parser)]
-#[command(author, about, long_about = None)]
+#[derive(Parser, Debug, Clone)]
+#[command(name = env!("CARGO_PKG_NAME"))]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(author = env!("CARGO_PKG_AUTHORS"))]
+#[command(about = env!("CARGO_PKG_DESCRIPTION"), long_about = None)]
+#[command(
+    after_help = concat!("Repository:    ", env!("CARGO_PKG_REPOSITORY"))
+)]
 struct Args {
     #[arg(short = 'p', long, default_value = "8765")]
     http_port: u16,
@@ -959,42 +965,41 @@ async fn main() -> Result<()> {
     );
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
-    let shutdown_clone = shutdown.clone();
 
-    let _signal_handle = tokio::spawn(async move {
+    // Handle Ctrl+C (any OS)
+    let shutdown_clone = shutdown.clone();
+    tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         eprintln!("\nCtrl+C received, shutting down gracefully...");
         shutdown_clone.notify_waiters();
     });
 
-    let shutdown_clone = shutdown.clone();
-    let _stdin_handle = tokio::spawn(async move {
-        use crossterm::{event, terminal};
-        use std::time::Duration;
-        let _ = terminal::enable_raw_mode();
-        loop {
-            if event::poll(Duration::from_millis(100))
-                .unwrap_or(false)
-            {
-                if let Ok(event::Event::Key(key_event)) =
-                    event::read()
-                {
-                    if matches!(
-                        key_event.code,
-                        event::KeyCode::Char('q')
-                            | event::KeyCode::Char('Q')
-                    ) {
-                        let _ = terminal::disable_raw_mode();
-                        eprintln!(
-                            "\n'q' pressed, shutting down gracefully..."
-                        );
-                        shutdown_clone.notify_waiters();
-                        break;
-                    }
-                }
+    // Handle SIGTERM (systemd, Docker)
+    #[cfg(unix)]
+    {
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move {
+            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .context("Failed to listen for SIGTERM")?;
+            sigterm.recv().await;
+            eprintln!("\nSIGTERM received, shutting down gracefully...");
+            shutdown_clone.notify_waiters();
+            Ok::<(), anyhow::Error>(())
+        });
+    }
+
+    // Handle Ctrl+Break (console uses it) on Windows
+    #[cfg(windows)]
+    {
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move {
+            if let Ok(mut ctrl_break) = tokio::signal::windows::ctrl_break() {
+                ctrl_break.recv().await;
+                eprintln!("\nCtrl+Break received, shutting down gracefully...");
+                shutdown_clone.notify_waiters();
             }
-        }
-    });
+        });
+    }
 
     loop {
         tokio::select! {
