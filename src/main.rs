@@ -52,7 +52,6 @@ const SOCKS5_ERRORS: &[&str] = &[
 
 const MAX_HOSTNAME_LEN: usize = 255;
 const SOCKS5_CONNECT_MAX_LEN: usize = 262;
-
 async fn handle_http_request(
     mut req: Request<Incoming>,
     upstream_port: u16,
@@ -64,87 +63,97 @@ async fn handle_http_request(
 
     eprintln!("{} {} (host: {}:{})", method, uri, host, port);
 
-    // For regular HTTP requests, read the entire body first
     let body_bytes = read_body(&mut req).await?;
-
-    // Connect to upstream SOCKS5h server and perform handshake
     let mut upstream_stream =
         connect_to_socks5(upstream_port).await?;
     socks5_handshake(&mut upstream_stream, &host, port).await?;
 
-    // Build the HTTP request to send through the tunnel
+    // Build raw HTTP request
     let request_line = format!(
         "{} {} HTTP/{:?}\r\n",
         method,
         req.uri().path_and_query().unwrap_or(&"/".parse().unwrap()),
         req.version()
     );
-    let mut request_headers = request_line.into_bytes();
 
-    // Write headers (excluding host and connection headers which we'll set)
+    let mut request_bytes = request_line.into_bytes();
+
     for (name, value) in req.headers().iter() {
         let name_str = name.as_str();
-        if name_str.to_lowercase() == "host"
-            || name_str.to_lowercase() == "connection"
-            || name_str.to_lowercase() == "content-length"
-        {
+        if matches!(
+            name_str.to_lowercase().as_str(),
+            "host" | "connection" | "content-length"
+        ) {
             continue;
         }
-        request_headers.extend_from_slice(name_str.as_bytes());
-        request_headers.extend_from_slice(b": ");
-        request_headers.extend_from_slice(value.as_bytes());
-        request_headers.extend_from_slice(b"\r\n");
+        request_bytes.extend_from_slice(name_str.as_bytes());
+        request_bytes.extend_from_slice(b": ");
+        request_bytes.extend_from_slice(value.as_bytes());
+        request_bytes.extend_from_slice(b"\r\n");
     }
 
-    // Add required headers
-    request_headers.extend_from_slice(b"Host: ");
-    request_headers.extend_from_slice(host.as_bytes());
+    request_bytes.extend_from_slice(b"Host: ");
+    request_bytes.extend_from_slice(host.as_bytes());
     if port != 80 {
-        request_headers.extend_from_slice(b":");
-        request_headers
-            .extend_from_slice(port.to_string().as_bytes());
+        request_bytes.extend_from_slice(b":");
+        request_bytes.extend_from_slice(port.to_string().as_bytes());
     }
-    request_headers.extend_from_slice(b"\r\n");
-    request_headers.extend_from_slice(b"Connection: close\r\n");
+    request_bytes.extend_from_slice(b"\r\n");
+    request_bytes.extend_from_slice(b"Connection: close\r\n");
 
     if !body_bytes.is_empty() {
-        request_headers.extend_from_slice(b"Content-Length: ");
-        request_headers.extend_from_slice(
+        request_bytes.extend_from_slice(b"Content-Length: ");
+        request_bytes.extend_from_slice(
             body_bytes.len().to_string().as_bytes(),
         );
-        request_headers.extend_from_slice(b"\r\n");
+        request_bytes.extend_from_slice(b"\r\n");
     }
 
-    request_headers.extend_from_slice(b"\r\n");
-    if !body_bytes.is_empty() {
-        request_headers.extend_from_slice(&body_bytes);
-    }
+    request_bytes.extend_from_slice(b"\r\n");
+    request_bytes.extend_from_slice(&body_bytes);
 
-    // Send the complete HTTP request through SOCKS5 tunnel
-    upstream_stream.write_all(&request_headers).await.context(
+    upstream_stream.write_all(&request_bytes).await.context(
         "Failed to send HTTP request through SOCKS5 tunnel",
     )?;
 
-    // Read the response
-    let mut response_buf = vec![0u8; 65536];
-    let n = timeout(
-        Duration::from_secs(60),
-        upstream_stream.read(&mut response_buf),
-    )
-        .await
-        .context("Timeout reading response from upstream")??;
+    // Read response in chunks, parse headers, relay body as binary
+    let mut response_buf = Vec::new();
+    let mut buf = [0u8; 8192];
 
-    ensure!(n > 0, "Upstream closed connection without response");
+    // Read until we find the end of headers
+    let mut headers_end = None;
+    loop {
+        let n = timeout(
+            Duration::from_secs(60),
+            upstream_stream.read(&mut buf),
+        )
+            .await
+            .context("Timeout reading response from upstream")??;
 
-    // Parse the HTTP response
-    let response_text =
-        String::from_utf8(response_buf[..n].to_vec())
-            .context("Invalid UTF-8 in response")?;
+        ensure!(
+            n > 0,
+            "Upstream closed connection without response"
+        );
+        response_buf.extend_from_slice(&buf[..n]);
 
-    // Simple HTTP response parsing (split headers and body)
-    let parts: Vec<&str> = response_text.split("\r\n\r\n").collect();
-    let headers_section = parts[0];
-    let body = if parts.len() > 1 { parts[1] } else { "" };
+        // Look for end of headers
+        if let Some(pos) =
+            response_buf.windows(4).position(|w| w == b"\r\n\r\n")
+        {
+            headers_end = Some(pos + 4);
+            break;
+        }
+
+        // Safety check: headers shouldn't be huge
+        if response_buf.len() > 65536 {
+            bail!("Response headers exceed 64 KB");
+        }
+    }
+
+    let headers_end = headers_end.unwrap();
+    let headers_section =
+        std::str::from_utf8(&response_buf[..headers_end - 4])
+            .context("Invalid UTF-8 in response headers")?;
 
     let lines: Vec<&str> = headers_section.lines().collect();
     let status_line = lines.first().context("Empty response")?;
@@ -159,8 +168,6 @@ async fn handle_http_request(
 
     let mut response_builder =
         Response::builder().status(status_code);
-
-    // Copy response headers (skip status line)
     for line in &lines[1..] {
         if let Some((key, value)) = line.split_once(':') {
             response_builder =
@@ -168,10 +175,31 @@ async fn handle_http_request(
         }
     }
 
+    // Relay remaining body as-is (binary safe)
+    let body_start = response_buf[headers_end..].to_vec();
+
+    // Read rest of body from upstream
+    let mut full_body = body_start;
+    loop {
+        match timeout(
+            Duration::from_secs(60),
+            upstream_stream.read(&mut buf),
+        )
+            .await
+            .context("Timeout reading response body")?
+        {
+            Ok(0) => break,
+            Ok(n) => full_body.extend_from_slice(&buf[..n]),
+            Err(e) => return Err(e.into()),
+        }
+    }
+
     Ok(response_builder
-        .body(Full::new(Bytes::from(body.to_string())))
+        .body(Full::new(Bytes::from(full_body)))
         .unwrap())
 }
+const TUNNEL_BUFFER_SIZE: usize = 65536; // 64 KB instead of 8192
+
 async fn tunnel_bidirectional(
     client: &mut TcpStream,
     upstream: &mut TcpStream,
@@ -180,7 +208,7 @@ async fn tunnel_bidirectional(
     let (mut upstream_read, mut upstream_write) = upstream.split();
 
     let client_to_upstream = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
         loop {
             match client_read.read(&mut buf).await {
                 Ok(0) => break,
@@ -188,11 +216,12 @@ async fn tunnel_bidirectional(
                 Err(e) => return Err(e),
             }
         }
+        let _ = upstream_write.shutdown().await;
         Ok::<_, std::io::Error>(())
     };
 
     let upstream_to_client = async {
-        let mut buf = vec![0u8; 8192];
+        let mut buf = vec![0u8; TUNNEL_BUFFER_SIZE];
         loop {
             match upstream_read.read(&mut buf).await {
                 Ok(0) => break,
@@ -200,10 +229,10 @@ async fn tunnel_bidirectional(
                 Err(e) => return Err(e),
             }
         }
+        let _ = client_write.shutdown().await;
         Ok::<_, std::io::Error>(())
     };
 
-    // Wait for BOTH directions to complete
     tokio::try_join!(client_to_upstream, upstream_to_client)
         .context("Bidirectional tunnel failed")?;
 
