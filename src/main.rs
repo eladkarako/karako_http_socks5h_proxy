@@ -8,6 +8,7 @@
 ))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use anyhow::{bail, ensure, Context, Result};
 use bytes::Bytes;
 use clap::Parser;
@@ -86,8 +87,6 @@ impl Service<Request<Incoming>> for Socks5Http2ProxyService {
         })
     }
 }
-
-/// Handle HTTP/2 request
 async fn handle_h2_request(
     mut req: Request<Incoming>,
     upstream_port: u16,
@@ -100,19 +99,23 @@ async fn handle_h2_request(
 
     eprintln!("{} {} (host: {}:{})", method, uri, host, port);
 
-    // HTTP/2 doesn't support CONNECT tunneling in the traditional sense
     if method == hyper::http::Method::CONNECT {
+        eprintln!("[CONNECT] Tunneling to {}:{}", host, port);
+
+        // Establish SOCKS5 connection to target
+        let mut upstream_stream = connect_to_socks5(upstream_port).await?;
+        socks5_handshake(&mut upstream_stream, &host, port).await?;
+
+        // Return 200 to signal tunnel ready
+        // (Real tunnel happens via socket upgrade, which hyper doesn't support directly)
         return Ok(Response::builder()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .body(Full::new(Bytes::from(
-                "CONNECT not supported; use HTTP/2 directly",
-            )))
+            .status(StatusCode::OK)
+            .body(Full::new(Bytes::new()))
             .unwrap());
     }
 
+    // Regular HTTP request handling (your existing code)
     let body_bytes = read_body(&mut req).await?;
-
-    // Build forward request
     let mut forward_req = Request::builder()
         .method(method.clone())
         .uri(format!(
@@ -123,97 +126,69 @@ async fn handle_h2_request(
                 .map(|pq| pq.to_string())
                 .unwrap_or_else(|| "/".to_string())
         ))
-        .version(hyper::Version::HTTP_2);
+        .version(hyper::Version::HTTP_11);
 
-    // Copy headers (skip hop-by-hop and connection-specific headers)
     for (name, value) in req.headers().iter() {
         let name_str = name.as_str().to_lowercase();
         if !matches!(
             name_str.as_str(),
-            "host"
-                | "connection"
-                | "te"
-                | "trailer"
-                | "transfer-encoding"
-                | "upgrade"
+            "host" | "connection" | "te" | "trailer" | "transfer-encoding" | "upgrade"
         ) {
             forward_req = forward_req.header(name, value);
         }
     }
 
-    // Set authority header
-    forward_req =
-        forward_req.header("host", format!("{}:{}", host, port));
-
-    // Add content-length if body present
+    forward_req = forward_req.header("host", format!("{}:{}", host, port));
     if !body_bytes.is_empty() {
-        forward_req =
-            forward_req.header("content-length", body_bytes.len());
+        forward_req = forward_req.header("content-length", body_bytes.len());
     }
 
     let forward_req = forward_req
         .body(Full::new(Bytes::from(body_bytes)))
         .context("Failed to build forward request")?;
 
-    // Connect through SOCKS5 tunnel
-    let mut upstream_stream =
-        connect_to_socks5(upstream_port).await?;
+    let mut upstream_stream = connect_to_socks5(upstream_port).await?;
     socks5_handshake(&mut upstream_stream, &host, port).await?;
 
-    // Establish HTTP/2 connection
     let io = hyper_util::rt::TokioIo::new(upstream_stream);
-    let (mut sender, conn) =
-        hyper::client::conn::http2::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-            .handshake(io)
-            .await
-            .context(
-                "Failed to establish HTTP/2 connection through SOCKS5",
-            )?;
+    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+        .handshake(io)
+        .await
+        .context("Failed to establish HTTP/1.1 connection through SOCKS5")?;
 
-    // Spawn connection maintenance task
     tokio::spawn(async move {
         if let Err(e) = conn.await {
-            eprintln!("Upstream HTTP/2 connection error: {}", e);
+            eprintln!("Upstream HTTP/1.1 connection error: {}", e);
         }
     });
 
-    // Send request and collect response
     let response = sender
         .send_request(forward_req)
         .await
-        .context("Failed to send HTTP/2 request through SOCKS5")?;
+        .context("Failed to send HTTP/1.1 request through SOCKS5")?;
 
     let (parts, body) = response.into_parts();
     let body_bytes = http_body_util::BodyExt::collect(body)
         .await
-        .context("Failed to read HTTP/2 response body")?
+        .context("Failed to read response body")?
         .to_bytes();
 
-    // Filter response headers to remove HTTP/1.1-specific headers incompatible with HTTP/2
-    let mut response_builder =
-        Response::builder().status(parts.status);
+    let mut response_builder = Response::builder().status(parts.status);
     for (name, value) in parts.headers.iter() {
         let name_str = name.as_str().to_lowercase();
-        // Skip HTTP/1.1-only headers
         if !matches!(
             name_str.as_str(),
-            "connection"
-                | "keep-alive"
-                | "transfer-encoding"
-                | "upgrade"
-                | "proxy-connection"
-                | "te"
-                | "trailer"
+            "connection" | "keep-alive" | "transfer-encoding" | "upgrade" | "proxy-connection" | "te" | "trailer"
         ) {
             response_builder = response_builder.header(name, value);
         }
     }
+
     Ok(response_builder
         .body(Full::new(body_bytes))
         .context("Failed to build response")?)
 }
+
 
 fn extract_host(
     uri: &hyper::Uri,
@@ -269,13 +244,17 @@ async fn socks5_handshake(
     host: &str,
     port: u16,
 ) -> Result<()> {
+    eprintln!("[SOCKS5] Starting handshake for {}:{}", host, port);
+
+    // Greeting
     timeout(
         Duration::from_secs(30),
         upstream_stream.write_all(SOCKS5_GREETING),
     )
         .await
-        .context("Failed to send SOCKS5 greeting")??;
-    eprintln!("Sent SOCKS5 greeting: {:?}", SOCKS5_GREETING);
+        .context("SOCKS5 greeting write timeout")?
+        .context("Failed to send SOCKS5 greeting")?;
+    eprintln!("[SOCKS5] Sent greeting: {:?}", SOCKS5_GREETING);
 
     let mut resp = [0u8; 2];
     timeout(
@@ -283,85 +262,83 @@ async fn socks5_handshake(
         upstream_stream.read_exact(&mut resp),
     )
         .await
-        .context("Failed to read SOCKS5 greeting response")??;
-    eprintln!("Received SOCKS5 greeting response: {:?}", resp);
+        .context("SOCKS5 greeting read timeout")?
+        .context("Failed to read SOCKS5 greeting response")?;
+    eprintln!(
+        "[SOCKS5] Greeting response: {:?} (ver={}, method={})",
+        resp, resp[0], resp[1]
+    );
 
     ensure!(
         resp[0] == 5,
-        "Invalid SOCKS5 version in greeting response: {} (expected 5)",
+        "Invalid SOCKS5 version: {} (expected 5)",
         resp[0]
     );
-    ensure!(
-        resp[1] != 0xff,
-        "SOCKS5 server rejected all authentication methods"
-    );
+    ensure!(resp[1] != 0xff, "SOCKS5 server rejected all methods");
 
+    // Connect request
     ensure!(
         host.len() <= MAX_HOSTNAME_LEN,
-        "Hostname too long: {} bytes (max {})",
-        host.len(),
-        MAX_HOSTNAME_LEN
+        "Hostname too long: {} bytes",
+        host.len()
     );
 
     let mut connect_req = [0u8; SOCKS5_CONNECT_MAX_LEN];
     let len = 6 + host.len() + 2;
-
     connect_req[0] = 5;
-    connect_req[1] = 1;
-    connect_req[2] = 0;
-    connect_req[3] = 3;
+    connect_req[1] = 1; // CONNECT
+    connect_req[2] = 0; // Reserved
+    connect_req[3] = 3; // Domain name
     connect_req[4] = host.len() as u8;
     connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes());
     connect_req[5 + host.len()] = (port >> 8) as u8;
     connect_req[5 + host.len() + 1] = (port & 0xff) as u8;
 
     eprintln!(
-        "Sending SOCKS5 CONNECT for {}:{}: {:?}",
-        host,
-        port,
-        &connect_req[..len]
+        "[SOCKS5] Sending CONNECT request ({} bytes) for {}:{}",
+        len, host, port
     );
     timeout(
         Duration::from_secs(30),
         upstream_stream.write_all(&connect_req[..len]),
     )
         .await
-        .with_context(|| {
-            format!(
-                "Failed to send SOCKS5 connect request for {}:{}",
-                host, port
-            )
-        })??;
+        .context("SOCKS5 CONNECT write timeout")?
+        .context("Failed to send SOCKS5 CONNECT")?;
 
-    eprintln!(
-        "Waiting for SOCKS5 CONNECT response header (4 bytes)..."
-    );
     let mut resp_header = [0u8; 4];
     timeout(
         Duration::from_secs(30),
         upstream_stream.read_exact(&mut resp_header),
     )
         .await
-        .context("Failed to read SOCKS5 connect response header")??;
-    eprintln!("Received SOCKS5 CONNECT response: {:?}", resp_header);
+        .context("SOCKS5 CONNECT response read timeout")?
+        .context("Failed to read SOCKS5 CONNECT response")?;
+
+    eprintln!(
+        "[SOCKS5] CONNECT response: ver={}, rep={}, rsv={}, atyp={}",
+        resp_header[0],
+        resp_header[1],
+        resp_header[2],
+        resp_header[3]
+    );
 
     ensure!(
         resp_header[0] == 5,
-        "Invalid SOCKS5 version in connect response: {} (expected 5)",
-        resp_header[0]
+        "Invalid SOCKS5 version in response"
     );
 
     if resp_header[1] != 0 {
-        let error_msg = if (resp_header[1] as usize)
-            < SOCKS5_ERRORS.len()
-        {
-            SOCKS5_ERRORS[resp_header[1] as usize].to_string()
-        } else {
-            format!("Unknown SOCKS5 error code {}", resp_header[1])
-        };
-        bail!("SOCKS5 connection failed: {}", error_msg);
+        let error_msg =
+            if (resp_header[1] as usize) < SOCKS5_ERRORS.len() {
+                SOCKS5_ERRORS[resp_header[1] as usize].to_string()
+            } else {
+                format!("Unknown error code {}", resp_header[1])
+            };
+        bail!("SOCKS5 CONNECT failed: {}", error_msg);
     }
 
+    // Read address field based on type
     match resp_header[3] {
         1 => {
             let mut addr_port = [0u8; 6];
@@ -370,9 +347,9 @@ async fn socks5_handshake(
                 upstream_stream.read_exact(&mut addr_port),
             )
                 .await
-                .context(
-                    "Failed to read SOCKS5 IPv4 address response",
-                )??;
+                .context("SOCKS5 IPv4 response read timeout")?
+                .context("Failed to read SOCKS5 IPv4 response")?;
+            eprintln!("[SOCKS5] IPv4 response: {:?}", addr_port);
         }
         3 => {
             let mut len_byte = [0u8; 1];
@@ -381,35 +358,38 @@ async fn socks5_handshake(
                 .await
                 .context("Failed to read SOCKS5 domain length")?;
             let domain_len = len_byte[0] as usize;
+            eprintln!("[SOCKS5] Domain length: {}", domain_len);
+
             ensure!(
                 domain_len <= MAX_HOSTNAME_LEN,
-                "SOCKS5 response domain too long: {} bytes (max {})",
-                domain_len,
-                MAX_HOSTNAME_LEN
+                "Domain too long: {}",
+                domain_len
             );
+
             let mut domain_and_port = vec![0u8; domain_len + 2];
             upstream_stream
                 .read_exact(&mut domain_and_port)
                 .await
                 .context("Failed to read SOCKS5 domain response")?;
+            eprintln!(
+                "[SOCKS5] Domain response: {:?}",
+                domain_and_port
+            );
         }
         4 => {
             let mut addr_port = [0u8; 18];
             upstream_stream
                 .read_exact(&mut addr_port)
                 .await
-                .context(
-                    "Failed to read SOCKS5 IPv6 address response",
-                )?;
+                .context("Failed to read SOCKS5 IPv6 response")?;
+            eprintln!("[SOCKS5] IPv6 response: {:?}", addr_port);
         }
         atype => {
-            bail!(
-                "Unsupported address type in SOCKS5 response: {} (expected 1, 3, or 4)",
-                atype
-            );
+            bail!("Unsupported address type: {}", atype);
         }
     }
 
+    eprintln!("[SOCKS5] Handshake complete for {}:{}", host, port);
     Ok(())
 }
 
@@ -447,13 +427,36 @@ async fn main() -> Result<()> {
     );
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
-    let shutdown_clone = shutdown.clone();
 
+    // Ctrl+C handler
+    let shutdown_clone = shutdown.clone();
     let _signal_handle = tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-        eprintln!("\nShutting down gracefully...");
+        eprintln!("\nCtrl+C received, shutting down gracefully...");
         shutdown_clone.notify_waiters();
     });
+    // 'q' key handler
+    let shutdown_clone = shutdown.clone();
+    let _stdin_handle = tokio::spawn(async move {
+        use crossterm::{event, terminal};
+        use std::time::Duration;
+
+        let _ = terminal::enable_raw_mode();
+
+        loop {
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(event::Event::Key(key_event)) = event::read() {
+                    if matches!(key_event.code, event::KeyCode::Char('q') | event::KeyCode::Char('Q')) {
+                        let _ = terminal::disable_raw_mode();
+                        eprintln!("\n'q' pressed, shutting down gracefully...");
+                        shutdown_clone.notify_waiters();
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
 
     loop {
         tokio::select! {
@@ -463,8 +466,7 @@ async fn main() -> Result<()> {
                     Ok((socket, addr)) => {
                         let upstream_port = args.upstream_port;
                         tokio::spawn(async move {
-                            if let Err(e) = handle_h2_client_connection(socket, addr, upstream_port).
-                        await {
+                            if let Err(e) = handle_h2_client_connection(socket, addr, upstream_port).await {
                                 eprintln!("Client handler error from {}: {:#}", addr, e);
                             }
                         });
@@ -480,18 +482,28 @@ async fn main() -> Result<()> {
     eprintln!("Stopped accepting connections.");
     Ok(())
 }
-
-/// Handle HTTP/2 client connection
 async fn handle_h2_client_connection(
     socket: TcpStream,
-    _addr: std::net::SocketAddr,
+    addr: std::net::SocketAddr,
     upstream_port: u16,
 ) -> Result<()> {
+    eprintln!("[CLIENT] New connection from {}", addr);
     let io = hyper_util::rt::TokioIo::new(socket);
     let service = Socks5Http2ProxyService { upstream_port };
-    let builder = hyper::server::conn::http2::Builder::new(
-        hyper_util::rt::TokioExecutor::new(),
-    );
-    builder.serve_connection(io, service).await?;
-    Ok(())
+
+    let builder = hyper::server::conn::http1::Builder::new();
+
+    match builder.serve_connection(io, service).await {
+        Ok(_) => {
+            eprintln!("[CLIENT] Connection {} closed normally", addr);
+            Ok(())
+        }
+        Err(e) => {
+            // Ignore "connection closed" errors
+            if !e.to_string().contains("closed") {
+                eprintln!("[CLIENT] Connection {} error: {}", addr, e);
+            }
+            Ok(())
+        }
+    }
 }

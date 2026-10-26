@@ -14,6 +14,7 @@ repository = "https://github.com/eladkarako/http_socks5h_tcp_tunnel"
 rust-version = "1.93.0"
 
 [dependencies]
+crossterm = { version = "0.29.0", features = ["windows", "libc", "events"] }
 anyhow = { version = "1.0.104" }
 clap = { version = "4.6.7", features = ["derive"] }
 tokio = { version = "1.54.1", features = ["full"] }
