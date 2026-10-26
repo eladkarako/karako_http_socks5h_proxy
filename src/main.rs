@@ -172,7 +172,6 @@ async fn handle_http_request(
         .body(Full::new(Bytes::from(body.to_string())))
         .unwrap())
 }
-
 async fn tunnel_bidirectional(
     client: &mut TcpStream,
     upstream: &mut TcpStream,
@@ -204,10 +203,9 @@ async fn tunnel_bidirectional(
         Ok::<_, std::io::Error>(())
     };
 
-    tokio::select! {
-        res1 = client_to_upstream => res1.context("Client → Upstream failed")?,
-        res2 = upstream_to_client => res2.context("Upstream → Client failed")?,
-    }
+    // Wait for BOTH directions to complete
+    tokio::try_join!(client_to_upstream, upstream_to_client)
+        .context("Bidirectional tunnel failed")?;
 
     Ok(())
 }
