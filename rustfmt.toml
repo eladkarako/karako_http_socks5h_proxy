@@ -58,8 +58,8 @@ fn_single_line = false
 # "Vertical" = each parameter on its own line (strict vertical layout)
 fn_params_layout = "Vertical"
 
-# always separate impl blocks
-fn_args_layout = "Vertical"  # Similar to Vertical but for all situations
+# always separate impl blocks (deprecated)
+#fn_args_layout = "Vertical"  # Similar to Vertical but for all situations
 
 # ============================================================================
 # Import Organization
