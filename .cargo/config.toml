@@ -84,27 +84,27 @@ rustflags = ['-C', 'link-arg=-Wl,--gc-sections']
 [target.aarch64-unknown-linux-musl]
 linker    = '/home/elad/toolchains/aarch64-unknown-linux-musl/bin/aarch64-unknown-linux-musl-clang'
 ar        = '/home/elad/toolchains/aarch64-unknown-linux-musl/bin/llvm-ar'
-rustflags = ['-C', 'link-arg=-static', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
+rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
 
 [target.i686-unknown-linux-musl]
 linker    = '/home/elad/toolchains/i686-unknown-linux-musl/bin/i686-unknown-linux-musl-clang'
 ar        = '/home/elad/toolchains/i686-unknown-linux-musl/bin/llvm-ar'
-rustflags = ['-C', 'link-arg=-static', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
+rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
 
 [target.x86_64-unknown-linux-musl]
 linker    = '/home/elad/toolchains/x86_64-unknown-linux-musl/bin/x86_64-unknown-linux-musl-clang'
 ar        = '/home/elad/toolchains/x86_64-unknown-linux-musl/bin/llvm-ar'
-rustflags = ['-C', 'link-arg=-static', '-C', 'link-arg=-Wl,--gc-sections']
+rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
 
 [target.armv7-unknown-linux-musleabi]
 linker    = '/home/elad/toolchains/armv7-unknown-linux-musleabi/bin/armv7-unknown-linux-musleabi-clang'
 ar        = '/home/elad/toolchains/armv7-unknown-linux-musleabi/bin/llvm-ar'
-rustflags = ['-C', 'link-arg=-static', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
+rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
 
 [target.armv7-unknown-linux-musleabihf]
 linker    = '/home/elad/toolchains/armv7-unknown-linux-musleabihf/bin/armv7-unknown-linux-musleabihf-clang'
 ar        = '/home/elad/toolchains/armv7-unknown-linux-musleabihf/bin/llvm-ar'
-rustflags = ['-C', 'link-arg=-static', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
+rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'link-arg=-Wl,--gc-sections', '-C', 'link-arg=-Wno-unused-command-line-argument']
 
 
 [env]
