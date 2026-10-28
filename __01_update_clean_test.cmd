@@ -1,12 +1,25 @@
 ::@echo off
 
-::------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+::-----------------------------------------------------------------------------------------------------------------------------
 :: updates cargo once (for Cargo.lock)
 :: updates local rust components in Windows and WSL.
 :: clean and test on Windows for native Windows (x86_64), and WSL for native Linux (x86_64).
 :: **** if a test fails the result of cargo test effects the shell's exit code, which will quit before building
 :: it builds on Windows for Windows, and on WSL for Android NDK, Linux, embedded and powerpc. (Android recently moved toolchain from Windows to WSL, keeping just windows-msvc on Windows).
-::------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+::
+:: windows.
+:: in rare cases you'll need to refresh the toolchain then check it was installed properly.
+:: rustup toolchain uninstall stable-x86_64-pc-windows-msvc
+:: rustup toolchain install stable-x86_64-pc-windows-msvc
+:: rustup default stable-x86_64-pc-windows-msvc
+:: rustup component list --toolchain stable-x86_64-pc-windows-msvc
+::
+:: linux
+:: it writes a log file with tee
+:: you can try same command on windows by installing coreutils for windows: https://learn.microsoft.com/en-us/windows/core-utils/overview
+:: with 
+:: winget install Microsoft.Coreutils
+::-----------------------------------------------------------------------------------------------------------------------------
 
 
 chcp 65001 1>nul 2>nul
@@ -65,11 +78,10 @@ set "ARGS=%ARGS% source ~/.profile;"
 set "ARGS=%ARGS% source ~/.bashrc;"
 set "ARGS=%ARGS% rustup update;"
 set "ARGS=%ARGS% cargo clean;"
-set "ARGS=%ARGS% cargo test --jobs 16 --future-incompat-report --message-format human --verbose --color never --timings --target x86_64-unknown-linux-gnu;"
+set "ARGS=%ARGS% cargo test --jobs 16 --future-incompat-report --message-format human --verbose --color never --timings --target x86_64-unknown-linux-gnu  2>&1 | tee __01_update_clean_test.log ;"
 call wsl bash -lc "%ARGS%"
 set "EXIT_CODE=%ErrorLevel%"
 if ["%EXIT_CODE%"] neq ["0"] ( goto ERROR_TEST )
-
 
 echo [INFO] success.
 

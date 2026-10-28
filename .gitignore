@@ -13,3 +13,5 @@
 minified_*
 
 /resources/tor
+
+__01_update_clean_test.log
