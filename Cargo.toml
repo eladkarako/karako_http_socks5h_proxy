@@ -17,15 +17,16 @@ version = "26.10.27"
 anyhow = { version = "1.0.104" }
 bytes = { version = "1.12.1", features = ["extra-platforms"] }
 clap = { version = "4.6.7", features = ["derive", "wrap_help", "usage", "cargo", "suggestions", "help", "color"] }
-h2 = { version = "0.4.20", features = ["stream"] }
-hickory-resolver = { version = "0.26.3", features = ["tokio"] }
 http = { version = "1.5.0" }
-http-body = { version = "1.1.0" }
 http-body-util = { version = "0.1.5" }
 hyper = { version = "1.12.0", features = ["full", "http2", "http1", "client"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
-socket2 = { version = "0.6.5" }
 tokio = { version = "1.54.1", features = ["full"] }
+
+h2 = { version = "0.4.20", features = ["stream"] }
+hickory-resolver = { version = "0.26.3", features = ["tokio"] }
+http-body = { version = "1.1.0" }
+socket2 = { version = "0.6.5", features = ["all"] }
 tower = { version = "0.5.3", features = ["util", "tokio", "tokio-stream", "tokio-util"] }
 tower-service = { version = "0.3.3" }
 
