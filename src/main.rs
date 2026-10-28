@@ -15,20 +15,13 @@ use clap::Parser;
 use http::{Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, service::Service};
-use hyper_util::rt::TokioIo;
-use socket2::{SockRef, Socket, TcpKeepalive};
-use std::net::TcpStream as StdTcpStream;
+use socket2::SockRef;
 use std::{convert::Infallible, pin::Pin, sync::Arc};
-use tokio::net::{TcpSocket, TcpStream};
 use tokio::{
     io::{copy_bidirectional, AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
     time::{timeout, Duration},
 };
-
-#[cfg(target_os = "linux")]
-use std::os::unix::io::AsRawFd;
-#[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawSocket;
 
 #[derive(Debug, Clone, Copy)]
 enum SocketContext {
@@ -38,99 +31,167 @@ enum SocketContext {
     SocksHttpRequest, // Your proxy → SOCKS5 (HTTP req/resp)
 }
 
-///fine-tune socket with TCP_NODELAY - true, socket buffer size - larger, keep alive - timeouts. in-place by ref to keep tokio handling.
+/// fine-tune socket. context provides different values. keeps tokio async handling.
 fn configure_tokio_socket(
-    stream: &tokio::net::TcpStream,
+    stream: &TcpStream,
     ctx: SocketContext,
 ) -> Result<()> {
     let socket_ref = SockRef::from(stream);
 
-    socket_ref.set_tcp_nodelay(true)?; // TCP_NODELAY disables the Nagle algorithm, so segments are always sent asap.
-    socket_ref.set_linger(Some(Duration::from_secs(5)))?; // SO_LINGER — Control socket close behavior (Ensures proper cleanup; prevents connection reset by peer during shutdown).
+    // === TCP_NODELAY: Disable Nagle algorithm for immediate segment transmission ===
+    socket_ref
+        .set_tcp_nodelay(true)
+        .context("Failed to set TCP_NODELAY")?;
 
-    // Context-specific buffer sizes
+    // === SO_LINGER: Graceful shutdown with 5-second linger time ===
+    socket_ref
+        .set_linger(Some(Duration::from_secs(5)))
+        .context("Failed to set SO_LINGER")?;
+
+    // === Context-specific buffer sizes (SO_RCVBUF / SO_SNDBUF) ===
     let (recv_buf, send_buf) = match ctx {
         SocketContext::ClientInbound => {
             (2 * 1024 * 1024, 2 * 1024 * 1024)
-        } // proxy client                - recive 2M, send 2M (should be large).
-        SocketContext::SocksHandshake => (256 * 1024, 256 * 1024), // handshake                   - recive 256KB, send 256KB (it is small).
+        }
+        SocketContext::SocksHandshake => (256 * 1024, 256 * 1024),
         SocketContext::SocksTunnel => {
             (4 * 1024 * 1024, 4 * 1024 * 1024)
-        } // tunnel (data bidirectional) - recive 4M, send 4M (should be large).
+        }
         SocketContext::SocksHttpRequest => {
             (2 * 1024 * 1024, 2 * 1024 * 1024)
-        } // HTTP request/response       - recive 2M, send 2M (should be large).
-    };
-    socket_ref.set_recv_buffer_size(recv_buf)?; // SO_RCVBUF - changes the size of the operating system's receive buffer associated with the socket.
-    socket_ref.set_send_buffer_size(send_buf)?; // SO_SNDBUF - Changes the size of the operating system's send buffer associated with the socket.
-
-    #[cfg(any(
-        target_os = "android",
-        target_os = "fuchsia",
-        target_os = "linux"
-    ))]
-    {
-        // Context-specific cork
-        let cork = match ctx {
-            SocketContext::ClientInbound => false, // proxy client                - no
-            SocketContext::SocksHandshake => false, // handshake                   - no
-            SocketContext::SocksTunnel => true, // tunnel (data bidirectional) - yes - Cork for batching - more efficient tunnel throughput.
-            SocketContext::SocksHttpRequest => false, // HTTP request/response       - no
-        };
-        if cork {
-            socket_ref.set_tcp_cork(true)?; // TCP_CORK (Linux) - Batch packets for tunneling - For SocksTunnel context specifically - lets the kernel batch writes for efficiency. Good for copy_bidirectional().
-        }
-    }
-
-    // Context-specific quickack
-    let quickack = match ctx {
-        SocketContext::ClientInbound => true, // proxy client                - faster HTTP response times - ACKs for clients.
-        SocketContext::SocksHandshake => true, // handshake                   - faster response times
-        SocketContext::SocksTunnel => false, // tunnel (data bidirectional) - traffic is large and should be OS-buffered.
-        SocketContext::SocksHttpRequest => true, // HTTP request/response       - faster HTTP response times - ACKs for clients.
-    };
-    if quickack {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        socket_ref.set_tcp_quickack(true)?; // TCP_QUICKACK (Linux) - Faster ACKs for interactive traffic - Useful for HTTP/proxy scenarios where you're forwarding small packets. Disables delayed ACK.
-        #[cfg(target_os = "windows")]
-        socket_ref.set_tcp_ack_frequency(1)?; // Winsock2. SIO_TCP_SET_ACK_FREQUENCY IOCTL, it configures the number of TCP segments that must be received before the delayed ACK timer is ignored. 1 turns off TCP Delayed Acknowledgement.
-    }
-
-    // Context-specific keepalive
-    let (idle, interval, retries) = match ctx {
-        SocketContext::ClientInbound => {
-            (Duration::from_secs(45), Duration::from_secs(15), 3) // Client might be idle for a while (browser tab open).
-        }
-        SocketContext::SocksHandshake => {
-            (Duration::from_secs(30), Duration::from_secs(10), 3) // Handshake should be fast; detect broken SOCKS5 quickly.
-        }
-        SocketContext::SocksTunnel => {
-            (Duration::from_secs(120), Duration::from_secs(30), 3) // Tunnel is bidirectional data flow; be relaxed to avoid false positives.
-        }
-        SocketContext::SocksHttpRequest => {
-            (Duration::from_secs(30), Duration::from_secs(10), 5) // HTTP request/response is usually quick
         }
     };
 
-    socket_ref.set_keepalive(true)?; // SO_KEEPALIVE - enable sending of keep-alive messages on connection-oriented sockets.Enable TCP keepalive first.
-    socket_ref.set_tcp_keepalive(
-        // SO_KEEPALIVE - set parameters configuring TCP keepalive probes for this socket.
-        &socket2::TcpKeepalive::new()
-            .with_time(idle)
-            .with_interval(interval)
-            .with_retries(retries),
+    socket_ref.set_recv_buffer_size(recv_buf).with_context(
+        || {
+            format!(
+                "[{:?}] Failed to set SO_RCVBUF to {} bytes",
+                ctx, recv_buf
+            )
+        },
     )?;
 
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    socket_ref.set_tcp_user_timeout(Some(
-        Duration::from_secs(idle.as_secs()) * 2,
-    ))?; // TCP_USER_TIMEOUT - maximum amount of time that transmitted data may remain unacknowledged or buffered data may remain untransmitted before TCP will forcibly close the corresponding connection.
+    socket_ref.set_send_buffer_size(send_buf).with_context(
+        || {
+            format!(
+                "[{:?}] Failed to set SO_SNDBUF to {} bytes",
+                ctx, send_buf
+            )
+        },
+    )?;
 
+    // === TCP_CORK (Linux): Batch packets for tunnel efficiency ===
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        let cork = matches!(ctx, SocketContext::SocksTunnel); //only true on tunnel context.
+        if cork {
+            socket_ref.set_tcp_cork(true)
+                .context(
+                    "[SocksTunnel] Failed to set TCP_CORK for batched packet transmission",
+                )?;
+            eprintln!(
+                "[SOCKET] [SocksTunnel] TCP_CORK enabled for efficient batching"
+            );
+        }
+    }
+
+    // === TCP_QUICKACK (Linux) / TCP_ACK_FREQUENCY (Windows): Faster acknowledgments ===
+    let quickack =
+        matches!(ctx, SocketContext::SocksTunnel) == false; //only false in tunnel context
+
+    if quickack {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        {
+            socket_ref.set_tcp_quickack(true).with_context(
+                || format!("[{:?}] Failed to set TCP_QUICKACK", ctx),
+            )?;
+
+            eprintln!(
+                "[SOCKET] [{:?}] TCP_QUICKACK enabled for fast ACKs",
+                ctx
+            );
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            socket_ref.set_tcp_ack_frequency(1).with_context(
+                || {
+                    format!(
+                        "[{:?}] Failed to set TCP_ACK_FREQUENCY",
+                        ctx
+                    )
+                },
+            )?;
+
+            eprintln!(
+                "[SOCKET] [{:?}] TCP_ACK_FREQUENCY=1 (immediate ACKs)",
+                ctx
+            );
+        }
+    }
+
+    // === TCP_KEEPALIVE: Context-specific idle/interval/retries ===
+    let (idle, interval, retries) = match ctx {
+        SocketContext::ClientInbound => {
+            (Duration::from_secs(45), Duration::from_secs(15), 3)
+        }
+        SocketContext::SocksHandshake => {
+            (Duration::from_secs(30), Duration::from_secs(10), 3)
+        }
+        SocketContext::SocksTunnel => {
+            (Duration::from_secs(120), Duration::from_secs(30), 3)
+        }
+        SocketContext::SocksHttpRequest => {
+            (Duration::from_secs(30), Duration::from_secs(10), 5)
+        }
+    };
+
+    socket_ref
+        .set_keepalive(true)
+        .context("[SO_KEEPALIVE] Failed to enable TCP keepalive")?;
+
+    socket_ref
+        .set_tcp_keepalive(
+            &socket2::TcpKeepalive::new()
+                .with_time(idle)
+                .with_interval(interval)
+                .with_retries(retries),
+        )
+        .with_context(|| {
+            format!(
+                "[{:?}] Failed to set TCP_KEEPALIVE (idle={}s, interval={}s, retries={})",
+                ctx,
+                idle.as_secs(),
+                interval.as_secs(),
+                retries
+            )
+        })?;
+
+    // === TCP_USER_TIMEOUT (Linux): Force close if data unacknowledged too long ===
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        let user_timeout = Duration::from_secs(idle.as_secs() * 2);
+        socket_ref
+            .set_tcp_user_timeout(Some(user_timeout))
+            .with_context(|| {
+                format!(
+                    "[{:?}] Failed to set TCP_USER_TIMEOUT to {:?}",
+                    ctx, user_timeout
+                )
+            })?;
+        eprintln!(
+            "[SOCKET] [{:?}] TCP_USER_TIMEOUT={}s (2x idle timeout)",
+            ctx,
+            user_timeout.as_secs()
+        );
+    }
+
+    // === Summary log ===
     eprintln!(
-        "[SOCKET] Configured {:?}: {}KB recv, {}KB send, keepalive {}s/{}s/{} retries",
+        "[SOCKET] [{:?}] Configured: recv={}MB send={}MB | keepalive idle={}s interval={}s retries={} | nodelay=yes linger=5s",
         ctx,
-        recv_buf / 1024,
-        send_buf / 1024,
+        recv_buf / (1024 * 1024),
+        send_buf / (1024 * 1024),
         idle.as_secs(),
         interval.as_secs(),
         retries
