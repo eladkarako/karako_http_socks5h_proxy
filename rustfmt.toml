@@ -1,32 +1,138 @@
 # rustfmt.toml
 
-# Use the stable Rust formatting style.
+# ============================================================================
+# Edition & Style
+# ============================================================================
+
+# Specifies the Rust edition for formatting rules.
+# Valid values: "2015", "2018", "2021", "2024"
+edition = "2024"
+
+# Specifies the style edition for rustfmt behavior.
+# "2024" uses the latest stable formatting conventions.
 style_edition = "2024"
 
-# Keep lines reasonably readable.
+
+# ============================================================================
+# Line Width & General Formatting
+# ============================================================================
+
+# Maximum line length before wrapping. Lines longer than this will be
+# reformatted to fit within the limit where possible.
+# Default: 100
 max_width = 69
 
-# Expand small functions and expressions onto multiple lines.
+# Controls how rustfmt handles small heuristics for code expansion.
+# "Off" = no heuristic expansion
+# "Default" = balanced heuristic expansion
+# "Max" = aggressive expansion to multiple lines
+# We use "Max" to expand small functions and expressions onto multiple lines.
 use_small_heuristics = "Max"
 
-# Put function arguments on separate lines when necessary.
-fn_params_layout = "Vertical"
-
-# Keep imports grouped and readable.
-reorder_imports = true
-reorder_modules = true
-
-# Use spaces instead of tabs.
+# Use spaces instead of tabs for indentation.
+# true = use spaces, false = use tabs
 hard_tabs = false
+
+# Number of spaces per indentation level when hard_tabs is false.
+# Default: 4
 tab_spaces = 4
 
-# remove a trailing comma to multiline expressions.
-trailing_comma = "Never"
+# Whether to format string literals that exceed max_width.
+# false = leave string literals as-is (minimal changes)
+format_strings = false
 
-# Keep comments formatted where possible.
-wrap_comments = true
+
+# ============================================================================
+# Function Formatting
+# ============================================================================
+
+# Whether to format single-line function definitions across multiple lines.
+# false = break functions onto multiple lines when needed
+# true = keep functions on single line if possible
+fn_single_line = false
+
+# Layout for function parameters when they need to be wrapped.
+# "Tall" = each parameter on its own line
+# "Short" = fit multiple parameters per line if possible
+# "Mixed" = use a mix of both strategies
+# "Vertical" = each parameter on its own line (strict vertical layout)
+fn_params_layout = "Vertical"
+
+
+# ============================================================================
+# Import Organization
+# ============================================================================
+
+# Reorder and group imports according to rustfmt's import ordering rules.
+# true = automatically reorder imports
+# false = keep imports in their original order
+reorder_imports = true
+
+# Reorder modules to group them logically.
+# true = automatically reorder module declarations
+# false = keep modules in their original order
+reorder_modules = true
+
+
+# ============================================================================
+# Comments
+# ============================================================================
+
+# Whether to normalize comment formatting (reflow/rewrap comments).
+# false = leave comments exactly as written
+normalize_comments = false
+
+# Attempt to format comments to fit within the specified width.
+# true = wrap long comments
+# false = leave comments as-is
+wrap_comments = false
+
+# Maximum line length for comments before wrapping occurs.
+# Only applies when wrap_comments is true.
+# Default: 80
 comment_width = 80
 
+
+
+# ============================================================================
+# Trailing Commas
+# ============================================================================
+
+# Add trailing commas to match arm blocks even when on multiple lines.
+# true = add trailing comma after last arm when block spans multiple lines
+# false = no trailing comma
+match_block_trailing_comma = false
+
+# Control behavior of trailing commas in collections and expressions.
+# "Always" = always add trailing commas
+# "Never" = never add trailing commas
+# "Vertical" = only add trailing commas in vertical (multi-line) layouts
+# We use "Never" to remove trailing commas from multiline expressions.
+trailing_comma = "Never"
+
+# Whether to merge multiple #[derive(...)] attributes into one.
+# false = keep them separate
+merge_derives = false
+
+# ============================================================================
+# Blank Lines
+# ============================================================================
+
+# Minimum number of blank lines to preserve in code.
+# Default: 0 (collapse multiple blank lines to one)
+blank_lines_lower_bound = 0
+
+# Maximum number of blank lines before removing extras.
+# Default: 1 (collapse multiple blank lines to one)
+blank_lines_upper_bound = 1
+
+
+# ============================================================================
+# Ignored Files
+# ============================================================================
+
+# List of files and patterns to exclude from rustfmt formatting.
+# Useful for skipping generated code or vendored dependencies.
 ignore = [
     ".cargo/config.toml",
 ]
