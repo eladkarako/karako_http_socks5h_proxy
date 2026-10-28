@@ -52,14 +52,14 @@ format_strings = false
 fn_single_line = false
 
 # Layout for function parameters when they need to be wrapped.
-# "Tall" = each parameter on its own line (Similar to Vertical but for all situations)
+# "Tall" = each parameter on its own line (Similar to Vertical but for all situations).  inherent trailing comma.
 # "Short" = fit multiple parameters per line if possible
 # "Mixed" = use a mix of both strategies
 # "Vertical" = each parameter on its own line (strict vertical layout)
-fn_params_layout = "Tall"
+fn_params_layout = "Vertical"
 
 # always separate impl blocks
-fn_args_layout = "Tall"  # Similar to Vertical but for all situations
+fn_args_layout = "Vertical"  # Similar to Vertical but for all situations
 
 # ============================================================================
 # Import Organization
