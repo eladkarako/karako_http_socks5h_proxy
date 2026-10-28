@@ -19,7 +19,7 @@ set "TZ=UTC"
 
 pushd "%~sdp0"
 
-cargo fmt --verbose --message-format human
+cargo fmt --verbose --message-format human -- --config-path rustfmt.toml
 
 pause
 pause
