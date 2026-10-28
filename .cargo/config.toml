@@ -12,6 +12,7 @@ rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',
              '-C', 'link-arg=/OPT:REF',
              '-C', 'link-arg=/OPT:ICF',
              '-C', 'link-arg=/DEBUG:NONE',
+             '-C', 'target-feature=+crt-static',
             ]
 
 [target.x86_64-pc-windows-msvc]
@@ -20,6 +21,7 @@ rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',
 rustflags = ['-C', 'link-arg=/OPT:REF',
              '-C', 'link-arg=/OPT:ICF',
              '-C', 'link-arg=/DEBUG:NONE',
+             '-C', 'target-feature=+crt-static',
             ]
 
 [target.aarch64-pc-windows-msvc]
@@ -28,6 +30,7 @@ ar        = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC
 rustflags = ['-C', 'link-arg=/OPT:REF',
              '-C', 'link-arg=/OPT:ICF',
              '-C', 'link-arg=/DEBUG:NONE',
+             '-C', 'target-feature=+crt-static',
             ]
 
 #---------------------------------- Android
