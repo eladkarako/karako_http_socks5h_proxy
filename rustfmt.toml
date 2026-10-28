@@ -52,12 +52,14 @@ format_strings = false
 fn_single_line = false
 
 # Layout for function parameters when they need to be wrapped.
-# "Tall" = each parameter on its own line
+# "Tall" = each parameter on its own line (Similar to Vertical but for all situations)
 # "Short" = fit multiple parameters per line if possible
 # "Mixed" = use a mix of both strategies
 # "Vertical" = each parameter on its own line (strict vertical layout)
-fn_params_layout = "Vertical"
+fn_params_layout = "Tall"
 
+# always separate impl blocks
+fn_args_layout = "Tall"  # Similar to Vertical but for all situations
 
 # ============================================================================
 # Import Organization
@@ -120,7 +122,8 @@ merge_derives = false
 
 # Minimum number of blank lines to preserve in code.
 # Default: 0 (collapse multiple blank lines to one)
-blank_lines_lower_bound = 0
+# 1 - Force more blank lines between top-level items
+blank_lines_lower_bound = 1
 
 # Maximum number of blank lines before removing extras.
 # Default: 1 (collapse multiple blank lines to one)
