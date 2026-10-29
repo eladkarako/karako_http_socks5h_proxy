@@ -47,11 +47,11 @@ winres = "0.1.12"
 
 
 [profile.release]
-codegen-units = 1                                                   # Single unit for better optimization and smaller binary size
-debug = false                                                       # Strip debug symbols for smaller binary
-incremental = false                                                 # Disable incremental compilation for cleaner builds
-lto = true                                                          # Link-time optimization for better performance
-opt-level = 2                                                       # prioritizes speed (loop unrolling, better branch prediction, instruction cache fit) over binary size.
-panic = "abort"                                                     # Replace unwinding with abort (smaller binary, faster panics)
-rpath = false                                                       # Don't embed runtime library search paths
-strip = true                                                        # Strip all symbols from final binary
+lto = true                                                          # Link-time optimization across compilation units, for better performances.
+codegen-units = 1                                                   # Single unit for better LTO optimization and smaller binary size.
+incremental = false                                                 # Disable incremental compilation for cleaner builds, prevents stale build artifacts in release mode.
+opt-level = 3                                                       # prioritizes speed (loop unrolling, better branch prediction, instruction cache fit) over binary size. use value "z" (instead of 3) for optimizing size.
+panic = "abort"                                                     # Replace unwinding with abort (smaller binary, faster panics).
+rpath = false                                                       # Do not embed runtime library search paths which prevents runtime path issues, needed for static builds.
+debug = false                                                       # Removes debug symbols for smaller binary.
+strip = true                                                        # Removes all symbols from final binary minimizes its size.
