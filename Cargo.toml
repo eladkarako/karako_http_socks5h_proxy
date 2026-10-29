@@ -22,13 +22,13 @@ http-body-util = { version = "0.1.5" }
 hyper = { version = "1.12.0", features = ["full", "http2", "http1", "client"] }
 hyper-util = { version = "0.1.21", features = ["tokio"] }
 tokio = { version = "1.54.1", features = ["full"] }
-
-h2 = { version = "0.4.20", features = ["stream"] }
-hickory-resolver = { version = "0.26.3", features = ["tokio"] }
-http-body = { version = "1.1.0" }
 socket2 = { version = "0.6.5", features = ["all"] }
-tower = { version = "0.5.3", features = ["util", "tokio", "tokio-stream", "tokio-util"] }
-tower-service = { version = "0.3.3" }
+
+#h2 = { version = "0.4.20", features = ["stream"] }
+#hickory-resolver = { version = "0.26.3", features = ["tokio"] }
+#http-body = { version = "1.1.0" }
+#tower = { version = "0.5.3", features = ["util", "tokio", "tokio-stream", "tokio-util"] }
+#tower-service = { version = "0.3.3" }
 
 [target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")))'.dependencies]
 mimalloc = { version = "0.1.52" }
