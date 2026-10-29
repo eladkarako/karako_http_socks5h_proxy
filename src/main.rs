@@ -761,10 +761,20 @@ async fn send_http_request(
         .context("Failed to send HTTP/1.1 request through SOCKS5")?;
 
     let (parts, body) = response.into_parts();
-    let body_bytes = http_body_util::BodyExt::collect(body)
-        .await
-        .context("Failed to read response body")?
-        .to_bytes();
+
+    // don't read body for HEAD/status 204 (no content)/status 304 (not modified)
+    let body_bytes = if matches!(method.as_str(), "HEAD")
+        || matches!(
+            parts.status,
+            StatusCode::NO_CONTENT | StatusCode::NOT_MODIFIED
+        ) {
+        Bytes::new()
+    } else {
+        BodyExt::collect(body)
+            .await
+            .context("Failed to read response body")?
+            .to_bytes()
+    };
 
     let mut response_builder =
         Response::builder().status(parts.status);
@@ -995,10 +1005,18 @@ async fn handle_http1_request(
 
             // Convert Response<Full<Bytes>> to Response<BoxBody>
             let (parts, body) = response.into_parts();
-            let body_bytes = http_body_util::BodyExt::collect(body)
-                .await
-                .context("Failed to read response body")?
-                .to_bytes();
+
+            // don't read body for HEAD/status 204 (no content)/status 304 (not modified)
+            let body_bytes = if matches!(method.as_str(), "HEAD")
+                || matches!(
+                    parts.status,
+                    StatusCode::NO_CONTENT
+                        | StatusCode::NOT_MODIFIED
+                ) {
+                Bytes::new()
+            } else {
+                BodyExt::collect(body).await?.to_bytes()
+            };
 
             Ok(Response::from_parts(
                 parts,
