@@ -10,7 +10,9 @@ most programs will use HTTP1.1 `CONNECT`, and once the TCP tunnel established it
 that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).  
 you can set firefox and edge browsers to use it as HTTP proxy, and it works very well.
 
-note: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstream server and this program must run on same machine.
+by design limitations: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstream server and this program must run on same machine.  
+
+known issues/bugs: in `HEAD` (and probably `HTTP 204` and `HTTP 304`) there is zero length body which trigger some quirk in `hyper`. I'm trying to work around it.  
 
 binaries provided, supports many OS and architectures.
 
