@@ -8,30 +8,42 @@ jobs        = 8
 [target.i686-pc-windows-msvc]
 #linker    = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x86\link.exe'
 #ar        = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x86\lib.exe'
-rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',
-             '-C', 'link-arg=/OPT:REF',
-             '-C', 'link-arg=/OPT:ICF',
-             '-C', 'link-arg=/DEBUG:NONE',
+rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',    # removes flag that limits 32-bit apps to use up to 2GB address space. 64-bit apps don't need this. designed when running them in 64-bit systems. note that it isn't magically makes them handle it well.
+             '-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
+             '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
+             '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
+             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
+             '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
+             '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
+             '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
+             '-C', 'target-feature=+crt-static'      # Statically links the Microsoft Visual C Runtime (UCRT). The C runtime is embedded in your .exe instead of requiring msvcrt.dll at runtime. Creates a truly self-contained executable.
             ]
-#             '-C', 'target-feature=+crt-static'
 
 [target.x86_64-pc-windows-msvc]
 #linker    = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\link.exe'
 #ar        = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\lib.exe'
-rustflags = ['-C', 'link-arg=/OPT:REF',
-             '-C', 'link-arg=/OPT:ICF',
-             '-C', 'link-arg=/DEBUG:NONE',
+rustflags = ['-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
+             '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
+             '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
+             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
+             '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
+             '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
+             '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
+             '-C', 'target-feature=+crt-static'      # Statically links the Microsoft Visual C Runtime (UCRT). The C runtime is embedded in your .exe instead of requiring msvcrt.dll at runtime. Creates a truly self-contained executable.
             ]
-#             '-C', 'target-feature=+crt-static'
 
 [target.aarch64-pc-windows-msvc]
-linker    = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\arm64\link.exe'
-ar        = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\arm64\lib.exe'
-rustflags = ['-C', 'link-arg=/OPT:REF',
-             '-C', 'link-arg=/OPT:ICF',
-             '-C', 'link-arg=/DEBUG:NONE',
+#linker    = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\arm64\link.exe'
+#ar        = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\Hostx64\arm64\lib.exe'
+rustflags = ['-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
+             '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
+             '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
+             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
+             '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
+             '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
+             '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
+             '-C', 'target-feature=+crt-static'      # Statically links the Microsoft Visual C Runtime (UCRT). The C runtime is embedded in your .exe instead of requiring msvcrt.dll at runtime. Creates a truly self-contained executable.
             ]
-#             '-C', 'target-feature=+crt-static'
 
 #---------------------------------- Android
 [target.aarch64-linux-android]
@@ -108,6 +120,53 @@ rustflags = ['-C', 'link-arg=-static', '-C', 'link-self-contained=yes', '-C', 'l
 
 
 [env]
+#---------------------------------- static linking 3rd-parties (you should also include features such as `openssl = { version = "0.10", features = ["static"] }` and `rusqlite = { version = "0.29", features = ["bundled-sqlite"] }` )
+OPENSSL_STATIC                    = { force = true,  value = '1'     }  # OpenSSL       - crates: openssl-sys.
+SODIUM_STATIC                     = { force = true,  value = '1'     }  # libsodium     - crates: libsodium-sys.
+LIBSSH2_STATIC                    = { force = true,  value = '1'     }  # libssh2       - crates: libssh2-sys.
+MYSQL_STATIC                      = { force = true,  value = '1'     }  # MySQL         - crates: mysql.
+SQLITE_STATIC                     = { force = true,  value = '1'     }  # SQLite        - crates: sqlite, rusqlite.
+SQLITE_USE_BUNDLED                = { force = true,  value = '1'     }  # -""-
+ROCKSDB_STATIC                    = { force = true,  value = '1'     }  # RocksDB       - crates: rocksdb-sys.
+LMDB_STATIC                       = { force = true,  value = '1'     }  # LMDB          - crates: lmdb-sys.
+CURL_STATIC                       = { force = true,  value = '1'     }  # libcurl       - crates: curl-sys.
+XML2_STATIC                       = { force = true,  value = '1'     }  # libxml2       - crates: xml2-sys.
+ZLIB_STATIC                       = { force = true,  value = '1'     }  # zlib          - crates: zlib-sys, flate2.
+LIBZ_SYS_STATIC                   = { force = true,  value = '1'     }  # zlib          - crates: libz-sys.
+BROTLI_SYS_STATIC                 = { force = true,  value = '1'     }  # Brotli        - crates: brotli-sys.
+ZSTD_SYS_STATIC                   = { force = true,  value = '1'     }  # Zstandard     - crates: zstd-sys.
+LZ4_SYS_STATIC                    = { force = true,  value = '1'     }  # LZ4           - crates: lz4-sys.
+PNG_STATIC                        = { force = true,  value = '1'     }  # libpng        - crates: png, jpeg-decoder (feature = jpeg_static).
+GLIB_STATIC                       = { force = true,  value = '1'     }  # GLib          - crates: glib-sys.
+GTK_STATIC                        = { force = true,  value = '1'     }  # GTK+          - crates: gtk-rs.
+CAIRO_STATIC                      = { force = true,  value = '1'     }  # Cairo         - crates: cairo-sys-rs.
+POPPLER_STATIC                    = { force = true,  value = '1'     }  # Poppler       - crates: poppler-rs.
+IMAGEMAGICK_STATIC                = { force = true,  value = '1'     }  # ImageMagick   - crates: imagemagick-rs.
+GHOSTSCRIPT_STATIC                = { force = true,  value = '1'     }  # GhostScript   - crates: ghostscript-sys.
+GD_STATIC                         = { force = true,  value = '1'     }  # GD Graphics   - crates: gd-rs.
+FREETYPE_STATIC                   = { force = true,  value = '1'     }  # FreeType      - crates: freetype-sys.
+HARFBUZZ_STATIC                   = { force = true,  value = '1'     }  # HarfBuzz      - crates: harfbuzz-sys.
+PCRE2_SYS_STATIC                  = { force = true,  value = '1'     }  # PCRE2         - crates: pcre2-sys.
+OPUS_STATIC                       = { force = true,  value = '1'     }  # Opus          - crates: opus-sys.
+VORBIS_STATIC                     = { force = true,  value = '1'     }  # Vorbis        - crates: vorbis-sys.
+OPENBLAS_STATIC                   = { force = true,  value = '1'     }  # OpenBLAS      - crates: openblas-sys.
+GSL_STATIC                        = { force = true,  value = '1'     }  # GNU Scientific Library  - crates: gsl-sys.
+CAPSTONE_STATIC                   = { force = true,  value = '1'     }  # Capstone      - crates: capstone-sys.
+LIBFFI_STATIC                     = { force = true,  value = '1'     }  # libffi        - crates: libffi-sys.
+UUID_STATIC                       = { force = true,  value = '1'     }  # libuuid       - crates: uuid-sys.
+HWLOC_STATIC                      = { force = true,  value = '1'     }  # hwloc         - crates: hwloc-sys.
+#PG_CONFIG_PATH                   = { force = true,  value = './foo' }  # PostgreSQL    - crates: postgres. note: a little complex to set. should point to fully qualified path to `pg_config.exe` or to its folder (at any depth). for example `C:\\Program Files\\PostgreSQL\\16\\bin\\pg_config.exe` or `C:\\Program Files\\PostgreSQL\\16` .
+#                                                                       # ARM's MbedTLS - crates: mbedtls-sys (feature = std + vendored).
+#                                                                       # BoringSSL     - crates: boringssl-sys (feature = static) (BORINGSSL_STATIC=1 + BORINGSSL_DIR=/foo/bar).
+#                                                                       # Snappy        - crates: snap (feature = snappy_static).
+#                                                                       # Lua           - crates: lua (feature = vendored), mlua (feature = lua54-static).
+#                                                                       # GMP/MPFR      - crates: gmp-mpfr-sys (feature = gmp-static).
+#                                                                       # ICU           - crates: icu (feature = static).
+#                                                                       # LevelDB       - crates: leveldb-sys (feature = vendored).
+#                                                                       # Oniguruma     - crates: oniguruma-sys (feature = oniguruma-static).
+#FFMPEG_BUILD_PREFIX              = { force = true,  value = './bar' }  # FFmpeg        - crates: ffmpeg-sys. note: a little complex to set. should point to folder with lib/ (libavcodec.lib, libavformat.lib, etc.) and include/ (FFmpeg headers) .
+
+
 #---------------------------------- Android
 CC_aarch64_linux_android          = { force = true,  value = '/home/elad/toolchains/android-ndk-r30/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang'     }
 AR_aarch64_linux_android          = { force = true,  value = '/home/elad/toolchains/android-ndk-r30/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'                           }
