@@ -184,7 +184,9 @@ fn configure_tokio_socket(
                 .with_interval(config.keepalive_interval)
                 .with_retries(config.keepalive_retries),
         )
-        .context("Failed to override TCP_KEEPALIVE default configuration")?;
+        .context(
+            "Failed to override TCP_KEEPALIVE default configuration",
+        )?;
 
     eprintln!(
         "[SOCKET] [{}] Configured: recv={}MB send={}MB | keepalive idle={}s interval={}s retries={}",
@@ -342,7 +344,8 @@ async fn handle_http_request(
         .await?;
 
     let response =
-        send_http_request(upstream_stream, forward_req).await?;
+        send_http_request(upstream_stream, forward_req, &method)
+            .await?;
     Ok(response)
 }
 
@@ -354,7 +357,7 @@ fn extract_host(
     if let Some(host) = uri.host() {
         return Ok(host.to_string());
     }
-    if let Some(host_header) = req.headers().get("host") {
+    if let Some(host_header) = req.headers().get("Host") {
         let host_str =
             host_header.to_str().context("Invalid Host header")?;
         if let Some((host, _port)) = host_str.split_once(':') {
@@ -404,28 +407,32 @@ fn build_forward_request(
         .version(hyper::Version::HTTP_11);
 
     for (name, value) in req.headers().iter() {
-        let name_str = name.as_str().to_lowercase();
+        let name_str = name.as_str();
         if should_forward_header(&name_str) {
             forward_req = forward_req.header(name, value);
         }
     }
 
     forward_req =
-        forward_req.header("host", format!("{}:{}", host, port));
-    if !body_bytes.is_empty() {
-        forward_req =
-            forward_req.header("content-length", body_bytes.len());
-    }
+        forward_req.header("Host", format!("{}:{}", host, port));
+
+    forward_req = forward_req
+        .header("Content-Length", body_bytes.len().to_string()); //always set Content-Length.
 
     forward_req
         .body(Full::new(Bytes::from(body_bytes.to_vec())))
         .context("Failed to build forward request")
 }
 
-/// Determine if a header should be forwarded
-fn should_forward_header(name: &str) -> bool {
-    !matches!(
-        name,
+fn should_forward_response_header(
+    name: &str,
+    method: &http::Method,
+) -> bool {
+    let name_lower = name.to_lowercase();
+
+    // Never forward these
+    if matches!(
+        name_lower.as_str(),
         "host"
             | "connection"
             | "te"
@@ -434,6 +441,34 @@ fn should_forward_header(name: &str) -> bool {
             | "upgrade"
             | "proxy-connection"
             | "keep-alive"
+    ) {
+        return false;
+    }
+
+    // For HEAD requests, preserve original Content-Length (it's correct)
+    // For other methods, skip Content-Length (we'll recalculate it)
+    if name_lower == "content-length" && method.as_str() != "HEAD" {
+        return false;
+    }
+
+    true
+}
+
+/// Determine if a header should be forwarded - request
+fn should_forward_header(name: &str) -> bool {
+    let name_lower = name.to_lowercase();
+
+    !matches!(
+        name_lower.as_str(),
+        "host"
+            | "connection"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+            | "proxy-connection"
+            | "keep-alive"
+            | "content-length"
     )
 }
 
@@ -706,6 +741,7 @@ async fn read_socks5_bind_address(
 async fn send_http_request(
     upstream_stream: TcpStream,
     forward_req: Request<Full<Bytes>>,
+    method: &http::Method,
 ) -> Result<Response<Full<Bytes>>> {
     let io = hyper_util::rt::TokioIo::new(upstream_stream);
     let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
@@ -732,11 +768,18 @@ async fn send_http_request(
 
     let mut response_builder =
         Response::builder().status(parts.status);
+
     for (name, value) in parts.headers.iter() {
-        let name_str = name.as_str().to_lowercase();
-        if should_forward_header(&name_str) {
+        let name_str = name.as_str();
+        if should_forward_response_header(&name_str, method) {
             response_builder = response_builder.header(name, value);
         }
+    }
+
+    if method.as_str() != "HEAD" {
+        //for non-HEAD, always set Content-Length based on actual body.
+        response_builder = response_builder
+            .header("Content-Length", body_bytes.len().to_string()); //needs string
     }
 
     Ok(response_builder
@@ -757,8 +800,8 @@ async fn handle_http1_client_connection(
         Socks5Http1ProxyService { upstream_port, client_addr: addr };
 
     match hyper::server::conn::http1::Builder::new()
-        .preserve_header_case(true)
-        .title_case_headers(false)
+        .preserve_header_case(true) //try to preserve exact header's format for debug purposes, this means no .to_lowercase should be used to normalize headers across the code, the only instance is when using comparing method.
+        .title_case_headers(false) //avoid modifying headers since there are weird ones such as DNT which is commonly all large-case, so just keep them as is.
         .serve_connection(io, service)
         .with_upgrades()
         .await
@@ -881,7 +924,7 @@ async fn handle_http1_request(
             // Create response with 200 Connection Established
             let response = Response::builder()
                 .status(StatusCode::OK)
-                .header("connection", "upgrade")
+                .header("Connection", "Upgrade")
                 .body(BoxBody::new(Full::new(Bytes::new()).boxed()))
                 .context("Failed to build CONNECT response")?;
 
@@ -946,6 +989,7 @@ async fn handle_http1_request(
             let response = send_http_request(
                 upstream_stream_clone,
                 forward_req,
+                &method,
             )
                 .await?;
 
