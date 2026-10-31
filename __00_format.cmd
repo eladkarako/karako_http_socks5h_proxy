@@ -18,7 +18,7 @@ set "LC_ALL=en_US.UTF-8"
 set "TZ=UTC"
 
 pushd "%~sdp0"
-
+del /f /q "target\.rustfmt.cache" 1>nul 2>nul
 cargo fmt --verbose --message-format human -- --config-path rustfmt.toml
 
 pause
