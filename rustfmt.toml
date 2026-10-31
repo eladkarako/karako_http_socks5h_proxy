@@ -58,7 +58,7 @@ fn_single_line = false
 # "Vertical" = each parameter on its own line (strict vertical layout)
 fn_params_layout = "Vertical"
 
-# always separate impl blocks (deprecated)
+# always separate impl blocks (deprecated - use fn_params_layout)
 #fn_args_layout = "Vertical"  # Similar to Vertical but for all situations
 
 # ============================================================================
@@ -123,11 +123,11 @@ merge_derives = false
 # Minimum number of blank lines to preserve in code.
 # Default: 0 (collapse multiple blank lines to one)
 # 1 - Force more blank lines between top-level items
-blank_lines_lower_bound = 1
+blank_lines_lower_bound = 2
 
 # Maximum number of blank lines before removing extras.
 # Default: 1 (collapse multiple blank lines to one)
-blank_lines_upper_bound = 1
+blank_lines_upper_bound = 2
 
 
 # ============================================================================
