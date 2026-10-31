@@ -12,7 +12,6 @@ rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',    # removes flag that limits 
              '-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
              '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
              '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
-             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
              '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
              '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
              '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
@@ -25,7 +24,6 @@ rustflags = ['-C', 'link-arg=/LARGEADDRESSAWARE',    # removes flag that limits 
 rustflags = ['-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
              '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
              '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
-             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
              '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
              '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
              '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
@@ -38,7 +36,6 @@ rustflags = ['-C', 'link-arg=/OPT:REF',              # Linker optimization: remo
 rustflags = ['-C', 'link-arg=/OPT:REF',              # Linker optimization: removes all unreferenced functions, data sections, and code that isn't used by the program. Reduces final binary size without affecting functionality.
              '-C', 'link-arg=/OPT:ICF',              # Linker optimization: Identical Code Folding. Merges functions or code sections that are identical byte-for-byte, eliminating duplicate code. Shrinks binary size with no performance cost.
              '-C', 'link-arg=/DEBUG:NONE',           # Strips all debug symbols and debug information from the final executable. Significantly reduces file size; use only for production builds. Debugging symbols won't be available.
-             '-C', 'link-arg=/ALIGN:4096',           # Aligns PE sections to 4096-byte boundaries. Can reduce binary size by eliminating padding between sections. Minor impact, safe to use.
              '-C', 'link-arg=/DYNAMICBASE',          # Enables Address Space Layout Randomization (ASLR). Modern security best practice; no performance penalty.
              '-C', 'link-arg=/NXCOMPAT',             # Enables Data Execution Prevention (DEP). Marks stack and heap as non-executable. Security hardening with minimal cost.
              '-C', 'link-arg=/LTCG',                 # Link-Time Code Generation. Enables aggressive cross-module optimizations. Works with lto=true in Cargo.toml .
