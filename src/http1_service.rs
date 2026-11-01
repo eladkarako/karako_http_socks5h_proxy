@@ -21,7 +21,7 @@ use crate::socks5::{
 use crate::tunnel::handle_tunnel;
 
 type BoxBody =
-http_body_util::combinators::BoxBody<Bytes, Infallible>;
+    http_body_util::combinators::BoxBody<Bytes, Infallible>;
 
 #[derive(Clone)]
 pub struct Socks5Http1ProxyService {
@@ -35,9 +35,9 @@ impl Service<Request<Incoming>> for Socks5Http1ProxyService {
     type Future = Pin<
         Box<
             dyn std::future::Future<
-                Output=Result<Self::Response, Self::Error>,
-            > + Send
-            + 'static,
+                    Output = Result<Self::Response, Self::Error>,
+                > + Send
+                + 'static,
         >,
     >;
 
@@ -53,7 +53,7 @@ impl Service<Request<Incoming>> for Socks5Http1ProxyService {
                 upstream_port,
                 client_addr,
             )
-                .await
+            .await
             {
                 Ok(response) => Ok(response),
                 Err(e) => {
@@ -68,7 +68,7 @@ impl Service<Request<Incoming>> for Socks5Http1ProxyService {
                                 "Proxy error: {}",
                                 e
                             )))
-                                .boxed(),
+                            .boxed(),
                         ))
                         .unwrap())
                 }
@@ -139,7 +139,7 @@ async fn handle_http1_request(
                 &host,
                 port,
             )
-                .await?;
+            .await?;
             configure_tokio_socket(
                 &target_stream_clone,
                 SocketConfiguration::SOCKS_TUNNEL,
@@ -165,7 +165,7 @@ async fn handle_http1_request(
                             &host,
                             port,
                         )
-                            .await
+                        .await
                         {
                             eprintln!(
                                 "[CONNECT TUNNEL] Tunnel error for {}:{}: {:#}",
@@ -203,13 +203,13 @@ async fn handle_http1_request(
                 &host,
                 port,
             )
-                .await?;
+            .await?;
             let response = http::send_http_request(
                 upstream_stream_clone,
                 forward_req,
                 &method,
             )
-                .await?;
+            .await?;
             let (parts, body) = response.into_parts();
             let body_bytes = if matches!(method.as_str(), "HEAD")
                 || matches!(

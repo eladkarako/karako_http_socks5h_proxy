@@ -25,7 +25,7 @@ pub async fn handle_client_connection(
                     addr,
                     upstream_port,
                 )
-                    .await
+                .await
             } else if peek_str.starts_with("HTTP/")
                 || peek_str.contains("CONNECT ")
             {
@@ -35,7 +35,7 @@ pub async fn handle_client_connection(
                     addr,
                     upstream_port,
                 )
-                    .await
+                .await
             } else {
                 bail!(
                     "Unknown protocol from {}: {:?}",

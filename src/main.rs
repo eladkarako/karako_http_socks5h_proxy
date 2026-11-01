@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
             let mut sigterm = tokio::signal::unix::signal(
                 tokio::signal::unix::SignalKind::terminate(),
             )
-                .context("Failed to listen for SIGTERM")?;
+            .context("Failed to listen for SIGTERM")?;
             sigterm.recv().await;
             eprintln!(
                 "{}SIGTERM received, shutting down gracefully...",
