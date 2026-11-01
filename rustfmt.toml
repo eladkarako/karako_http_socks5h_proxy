@@ -1,3 +1,5 @@
+### note: I'm using rustrover, and have set to "on save" apply the cargo fmt, instead of the built-in formatter, rust rover actually does that in two stages. first it applies its own formatter then cargo fmt which uses this file. this is actually very good since it still allows me to use the right click optimize button, and have deterministic result. I also normalize some newlines by introducing them via NodeJS (when available) and `__00_format_pre.js`, via `__00_format.cmd` this is not integrated to anything..
+
 edition = "2024"
 style_edition = "2024"
 max_width = 69
