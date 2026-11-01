@@ -1,4 +1,8 @@
-#makes sure end-of-line for Windows specific files is kept `\r\n` .
+#makes sure end-of-line for Windows specific files is kept `\r\n`, it helps line comments `//` from breaking next line.
+
+*.rs          text      eol=crlf
+
+*.toml        text      eol=crlf
 
 *.xml         text      eol=crlf
 
