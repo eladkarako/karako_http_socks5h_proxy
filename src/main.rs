@@ -17,13 +17,20 @@ mod socket_config;
 
 mod socks5;
 
-use crate::socket_config::{
-    configure_tokio_socket, SocketConfiguration,
-};
+mod tunnel;
+
+mod http1_service;
+
+mod http2_service;
+
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
 
 #[cfg(target_os = "windows")]
 const EOL: &str = "\r\n";
@@ -36,7 +43,9 @@ const EOL: &str = "\n";
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
 #[command(about=env!("CARGO_PKG_DESCRIPTION"),long_about=None)]
-#[command(after_help = concat!("Repository:    ", env!("CARGO_PKG_REPOSITORY")))]
+#[command(
+    after_help = concat!("Repository:    ", env!("CARGO_PKG_REPOSITORY"))
+)]
 struct Args {
     #[arg(short = 'p', long, default_value = "8765")]
     http_port: u16,
