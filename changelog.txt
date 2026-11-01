@@ -1,3 +1,13 @@
+26.11.01
+* applying socket optimization when possible. SO_RCVBUF, SO_SNDBUF, TCP_NODELAY, TCP_CORK (linux only), TCP_QUICKACK (linux - actual, window - ACK frequency TCP_ACK_FREQUENCY), keepalive!!!!(retry+idle+interval)
+* splitting (finally) the "work-in" single main.rs to logical module with same functionality for now (no tests yet). fixing pub/crate use logic.
+* trying (with limited success) to explicitly tell the program to not try to read the request body, when method is HEAD or http status is 204 or 304 which has no request body. it still quirky.
+* build method uses a little NodeJS script (when node.exe is available in PATH) to make sure format is (deterministic) having newlines for readiblity, I call it pre-fmt, since `cargo fmt` is somewhat limited. also cleaning up rustfmt.toml .
+* windows builds - Data Execution Prevention (DEP) + Address Space Layout Randomization (ASLR) + aggressive cross-module optimizations, and including VC runtime MSVC in the binary. 
+* musl linux is linked better with self contained.
+* adding quite a lot of known components flags for building static, those are environment-variables used while linking, so if a project has need to compile some c code (like sqlite3) it will generate static build. it includes some notes, I know I just cleaned up this .cargo/config.toml before, but this is too useful..
+* optimizing binary for speed, while making the binary slightly larger..
+
 26.10.27
 * fixing signal handling for program.
 
