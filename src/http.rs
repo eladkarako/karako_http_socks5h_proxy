@@ -3,7 +3,7 @@ use bytes::Bytes;
 pub(crate) use http::{Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
-const MAX_HOSTNAME_LEN: usize = 255;
+
 pub fn extract_host(
     uri: &hyper::Uri,
     req: &Request<Incoming>,
@@ -21,9 +21,11 @@ pub fn extract_host(
     }
     anyhow::bail!("Cannot determine host from request")
 }
+
 pub fn extract_port(uri: &hyper::Uri) -> u16 {
     uri.port_u16().unwrap_or(80)
 }
+
 pub async fn read_request_body(
     req: &mut Request<Incoming>
 ) -> Result<Vec<u8>> {
@@ -35,6 +37,7 @@ pub async fn read_request_body(
         .context("Error reading request body")?;
     Ok(collected.to_bytes().to_vec())
 }
+
 pub fn build_forward_request(
     method: &http::Method,
     uri: &hyper::Uri,
@@ -67,6 +70,7 @@ pub fn build_forward_request(
         .body(Full::new(Bytes::from(body_bytes.to_vec())))
         .context("Failed to build forward request")
 }
+
 pub fn should_forward_response_header(
     name: &str,
     method: &http::Method,
@@ -90,6 +94,7 @@ pub fn should_forward_response_header(
     }
     true
 }
+
 pub fn should_forward_header(name: &str) -> bool {
     let name_lower = name.to_lowercase();
     !matches!(
@@ -105,13 +110,17 @@ pub fn should_forward_header(name: &str) -> bool {
             | "content-length"
     )
 }
+
 pub async fn send_http_request(
     upstream_stream: tokio::net::TcpStream,
     forward_req: Request<Full<Bytes>>,
     method: &http::Method,
 ) -> Result<Response<Full<Bytes>>> {
     let io = hyper_util::rt::TokioIo::new(upstream_stream);
-    let (mut sender, conn) = hyper::client::conn::http1::Builder::new().handshake(io).await.context("Failed to establish HTTP/1.1 connection through SOCKS5")?;
+    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+        .handshake(io)
+        .await
+        .context("Failed to establish HTTP/1.1 connection through SOCKS5")?;
     tokio::spawn(async move {
         if let Err(e) = conn.await {
             eprintln!("Upstream HTTP/1.1 connection error: {}", e);
