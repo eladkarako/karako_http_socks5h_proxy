@@ -6,6 +6,7 @@ use tokio::net::TcpStream;
 pub struct SocketConfiguration {
     pub recv_buffer: usize,
     pub send_buffer: usize,
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub tcp_cork: bool,
     pub tcp_quickack: bool,
     pub keepalive_idle: Duration,
@@ -13,10 +14,12 @@ pub struct SocketConfiguration {
     pub keepalive_retries: u32,
     pub name: &'static str,
 }
+
 impl SocketConfiguration {
     pub const CLIENT_INBOUND: Self = Self {
         recv_buffer: 2 * 1024 * 1024,
         send_buffer: 2 * 1024 * 1024,
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         tcp_cork: false,
         tcp_quickack: true,
         keepalive_idle: Duration::from_secs(45),
@@ -27,6 +30,7 @@ impl SocketConfiguration {
     pub const SOCKS_HANDSHAKE: Self = Self {
         recv_buffer: 256 * 1024,
         send_buffer: 256 * 1024,
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         tcp_cork: false,
         tcp_quickack: true,
         keepalive_idle: Duration::from_secs(30),
@@ -37,6 +41,7 @@ impl SocketConfiguration {
     pub const SOCKS_TUNNEL: Self = Self {
         recv_buffer: 4 * 1024 * 1024,
         send_buffer: 4 * 1024 * 1024,
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         tcp_cork: true,
         tcp_quickack: false,
         keepalive_idle: Duration::from_secs(120),
@@ -47,6 +52,7 @@ impl SocketConfiguration {
     pub const SOCKS_HTTP_REQUEST: Self = Self {
         recv_buffer: 2 * 1024 * 1024,
         send_buffer: 2 * 1024 * 1024,
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         tcp_cork: false,
         tcp_quickack: true,
         keepalive_idle: Duration::from_secs(30),
@@ -55,6 +61,7 @@ impl SocketConfiguration {
         name: "SocksHttpRequest",
     };
 }
+
 pub fn configure_tokio_socket(
     stream: &TcpStream,
     config: SocketConfiguration,
