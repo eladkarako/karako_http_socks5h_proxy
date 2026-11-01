@@ -2,6 +2,9 @@ use crate::http::{
     self, build_forward_request, extract_host, extract_port,
     read_request_body,
 };
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
 use crate::socks5::{
     connect_to_socks5_server, establish_socks5_connection,
 };
@@ -20,6 +23,7 @@ use tokio::time::timeout;
 type BoxBody =
 http_body_util::combinators::BoxBody<Bytes, Infallible>;
 const TUNNEL_TIMEOUT: Duration = Duration::from_secs(600);
+
 pub async fn handle_client_connection(
     socket: TcpStream,
     addr: std::net::SocketAddr,
@@ -78,6 +82,7 @@ pub async fn handle_client_connection(
         }
     }
 }
+
 async fn handle_http1_client_connection(
     socket: TcpStream,
     addr: std::net::SocketAddr,
@@ -112,6 +117,7 @@ async fn handle_http1_client_connection(
         }
     }
 }
+
 async fn handle_http2_client_connection(
     socket: TcpStream,
     addr: std::net::SocketAddr,
@@ -150,6 +156,7 @@ struct Socks5Http1ProxyService {
     upstream_port: u16,
     client_addr: std::net::SocketAddr,
 }
+
 impl Service<Request<Incoming>> for Socks5Http1ProxyService {
     type Response = Response<BoxBody>;
     type Error = Infallible;
@@ -201,6 +208,7 @@ struct Socks5Http2ProxyService {
     upstream_port: u16,
     client_addr: std::net::SocketAddr,
 }
+
 impl Service<Request<Incoming>> for Socks5Http2ProxyService {
     type Response = Response<Full<Bytes>>;
     type Error = Infallible;
@@ -237,6 +245,7 @@ impl Service<Request<Incoming>> for Socks5Http2ProxyService {
         })
     }
 }
+
 async fn handle_h2_request(
     req: Request<Incoming>,
     upstream_port: u16,
@@ -262,6 +271,7 @@ async fn handle_h2_request(
         }
     }
 }
+
 async fn handle_http_request(
     mut req: Request<Incoming>,
     host: &str,
@@ -283,6 +293,10 @@ async fn handle_http_request(
         connect_to_socks5_server(upstream_port).await?;
     establish_socks5_connection(&mut upstream_stream, host, port)
         .await?;
+    configure_tokio_socket(
+        &upstream_stream,
+        SocketConfiguration::SOCKS_HTTP_REQUEST,
+    )?;
     let response = http::send_http_request(
         upstream_stream,
         forward_req,
@@ -291,6 +305,7 @@ async fn handle_http_request(
         .await?;
     Ok(response)
 }
+
 async fn handle_http1_request(
     req: Request<Incoming>,
     upstream_port: u16,
@@ -319,6 +334,10 @@ async fn handle_http1_request(
                 port,
             )
                 .await?;
+            configure_tokio_socket(
+                &target_stream_clone,
+                SocketConfiguration::SOCKS_TUNNEL,
+            )?;
             eprintln!(
                 "[CONNECT TUNNEL] SOCKS5 connection established, sending 200 OK"
             );
@@ -403,6 +422,7 @@ async fn handle_http1_request(
         }
     }
 }
+
 async fn handle_tunnel(
     upgraded: hyper::upgrade::Upgraded,
     target: TcpStream,
@@ -415,9 +435,7 @@ async fn handle_tunnel(
     );
     let mut client = hyper_util::rt::TokioIo::new(upgraded);
     let mut target = target;
-    target
-        .set_nodelay(true)
-        .context("Failed to set TCP_NODELAY on target")?;
+
     let result = timeout(
         TUNNEL_TIMEOUT,
         copy_bidirectional(&mut client, &mut target),
