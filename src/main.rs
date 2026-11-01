@@ -9,6 +9,8 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod args;
+
 mod http;
 
 mod proxy;
@@ -23,8 +25,7 @@ mod http1_service;
 
 mod http2_service;
 
-use anyhow::{ensure, Context, Result};
-use clap::Parser;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 
@@ -38,34 +39,15 @@ const EOL: &str = "\r\n";
 #[cfg(not(target_os = "windows"))]
 const EOL: &str = "\n";
 
-#[derive(Parser, Debug, Clone)]
-#[command(name = env!("CARGO_PKG_NAME"))]
-#[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(author = env!("CARGO_PKG_AUTHORS"))]
-#[command(about=env!("CARGO_PKG_DESCRIPTION"),long_about=None)]
-#[command(
-    after_help = concat!("Repository:    ", env!("CARGO_PKG_REPOSITORY"))
-)]
-struct Args {
-    #[arg(short = 'p', long, default_value = "8765")]
-    http_port: u16,
-    #[arg(short = 'u', long, default_value = "5678")]
-    upstream_port: u16,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
-    ensure!(
-        args.http_port != args.upstream_port,
-        "HTTP port ({}) cannot be the same as upstream port ({})",
-        args.http_port,
-        args.upstream_port
-    );
+    let args = args::parse_and_validate()?;
+
     let addr: std::net::SocketAddr =
         format!("127.0.0.1:{}", args.http_port)
             .parse()
             .context("Failed to parse listen address")?;
+
     let listener =
         TcpListener::bind(&addr).await.with_context(|| {
             format!(
@@ -73,6 +55,7 @@ async fn main() -> Result<()> {
                 args.http_port
             )
         })?;
+
     eprintln!(
         "HTTP/1.1 + HTTP/2 proxy listening on 127.0.0.1:{}",
         args.http_port
@@ -81,6 +64,7 @@ async fn main() -> Result<()> {
         "Forwarding to upstream SOCKS5h on 127.0.0.1:{}",
         args.upstream_port
     );
+
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
     tokio::spawn(async move {
@@ -126,15 +110,31 @@ async fn main() -> Result<()> {
             }
         });
     }
+
     loop {
-        tokio::select! {_=shutdown.notified()=>break,result=listener.accept()=>{
-                match result{
-                    Ok((socket,client_addr))=>{
-        if let Err(e)=configure_tokio_socket(&socket,SocketConfiguration::CLIENT_INBOUND){
-            eprintln!("[SOCKET] Failed to configure inbound client socket: {:#}",e);
+        tokio::select! {
+            _ = shutdown.notified() => break,
+            result = listener.accept() => {
+                match result {
+                    Ok((socket, client_addr)) => {
+                        if let Err(e) = configure_tokio_socket(&socket, SocketConfiguration::CLIENT_INBOUND) {
+                            eprintln!("[SOCKET] Failed to configure inbound client socket: {:#}", e);
+                        }
+                        let upstream_port = args.upstream_port;
+                        tokio::spawn(async move {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port).await {
+                                eprintln!("Client handler error from {}: {:#}", client_addr, e);
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("Accept error: {}", e);
+                    }
+                }
+            }
         }
-                        let upstream_port=args.upstream_port;tokio::spawn(async move{if let Err(e)=proxy::handle_client_connection(socket,client_addr,upstream_port).await{eprintln!("Client handler error from {}: {:#}",client_addr,e);}});}Err(e)=>{eprintln!("Accept error: {}",e);}}}}
     }
+
     eprintln!("Stopped accepting connections.");
     Ok(())
 }
