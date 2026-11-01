@@ -1,7 +1,13 @@
 mod http;
+
 mod proxy;
+
 mod socket_config;
+
 mod socks5;
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
 use anyhow::{ensure, Context, Result};
 use clap::Parser;
 use std::sync::Arc;
@@ -104,7 +110,13 @@ async fn main() -> Result<()> {
         });
     }
     loop {
-        tokio::select! {_=shutdown.notified()=>break,result=listener.accept()=>{match result{Ok((socket,client_addr))=>{let upstream_port=args.upstream_port;tokio::spawn(async move{if let Err(e)=proxy::handle_client_connection(socket,client_addr,upstream_port).await{eprintln!("Client handler error from {}: {:#}",client_addr,e);}});}Err(e)=>{eprintln!("Accept error: {}",e);}}}}
+        tokio::select! {_=shutdown.notified()=>break,result=listener.accept()=>{
+                match result{
+                    Ok((socket,client_addr))=>{
+        if let Err(e)=configure_tokio_socket(&socket,SocketConfiguration::CLIENT_INBOUND){
+            eprintln!("[SOCKET] Failed to configure inbound client socket: {:#}",e);
+        }
+                        let upstream_port=args.upstream_port;tokio::spawn(async move{if let Err(e)=proxy::handle_client_connection(socket,client_addr,upstream_port).await{eprintln!("Client handler error from {}: {:#}",client_addr,e);}});}Err(e)=>{eprintln!("Accept error: {}",e);}}}}
     }
     eprintln!("Stopped accepting connections.");
     Ok(())
