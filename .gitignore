@@ -9,6 +9,7 @@
 /target/
 
 *_minified_*
+*minified*
 
 minified_*
 
