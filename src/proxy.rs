@@ -151,6 +151,7 @@ async fn handle_http2_client_connection(
         }
     }
 }
+
 #[derive(Clone)]
 struct Socks5Http1ProxyService {
     upstream_port: u16,
@@ -168,6 +169,7 @@ impl Service<Request<Incoming>> for Socks5Http1ProxyService {
             + 'static,
         >,
     >;
+
     fn call(
         &self,
         req: Request<Incoming>,
@@ -203,6 +205,7 @@ impl Service<Request<Incoming>> for Socks5Http1ProxyService {
         })
     }
 }
+
 #[derive(Clone)]
 struct Socks5Http2ProxyService {
     upstream_port: u16,
@@ -220,6 +223,7 @@ impl Service<Request<Incoming>> for Socks5Http2ProxyService {
             + 'static,
         >,
     >;
+
     fn call(
         &self,
         req: Request<Incoming>,

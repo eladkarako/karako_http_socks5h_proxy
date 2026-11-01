@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use socket2::SockRef;
 use std::time::Duration;
 use tokio::net::TcpStream;
+
 #[derive(Debug, Clone, Copy)]
 pub struct SocketConfiguration {
     pub recv_buffer: usize,
@@ -27,6 +28,7 @@ impl SocketConfiguration {
         keepalive_retries: 3,
         name: "ClientInbound",
     };
+
     pub const SOCKS_HANDSHAKE: Self = Self {
         recv_buffer: 256 * 1024,
         send_buffer: 256 * 1024,
@@ -38,6 +40,7 @@ impl SocketConfiguration {
         keepalive_retries: 3,
         name: "SocksHandshake",
     };
+
     pub const SOCKS_TUNNEL: Self = Self {
         recv_buffer: 4 * 1024 * 1024,
         send_buffer: 4 * 1024 * 1024,
@@ -49,6 +52,7 @@ impl SocketConfiguration {
         keepalive_retries: 3,
         name: "SocksTunnel",
     };
+
     pub const SOCKS_HTTP_REQUEST: Self = Self {
         recv_buffer: 2 * 1024 * 1024,
         send_buffer: 2 * 1024 * 1024,
@@ -85,8 +89,10 @@ pub fn configure_tokio_socket(
             config.send_buffer
         ),
     )?;
+
     #[cfg(any(target_os = "android", target_os = "linux"))]
     apply_linux_optimizations(&socket_ref, &config)?;
+
     #[cfg(target_os = "windows")]
     apply_windows_optimizations(&socket_ref, &config)?;
     socket_ref
@@ -113,6 +119,7 @@ pub fn configure_tokio_socket(
     );
     Ok(())
 }
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn apply_linux_optimizations(
     socket_ref: &SockRef,
@@ -142,6 +149,7 @@ fn apply_linux_optimizations(
     );
     Ok(())
 }
+
 #[cfg(target_os = "windows")]
 fn apply_windows_optimizations(
     socket_ref: &SockRef,

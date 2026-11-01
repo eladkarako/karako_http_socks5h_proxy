@@ -1,17 +1,3 @@
-mod http;
-
-mod proxy;
-
-mod socket_config;
-
-mod socks5;
-use crate::socket_config::{
-    configure_tokio_socket, SocketConfiguration,
-};
-use anyhow::{ensure, Context, Result};
-use clap::Parser;
-use std::sync::Arc;
-use tokio::net::TcpListener;
 #[cfg(all(
     target_os = "linux",
     any(
@@ -22,10 +8,29 @@ use tokio::net::TcpListener;
 ))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+mod http;
+
+mod proxy;
+
+mod socket_config;
+
+mod socks5;
+
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
+use anyhow::{ensure, Context, Result};
+use clap::Parser;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+
 #[cfg(target_os = "windows")]
 const EOL: &str = "\r\n";
+
 #[cfg(not(target_os = "windows"))]
 const EOL: &str = "\n";
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
@@ -38,6 +43,7 @@ struct Args {
     #[arg(short = 'u', long, default_value = "5678")]
     upstream_port: u16,
 }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -76,6 +82,7 @@ async fn main() -> Result<()> {
         );
         shutdown_clone.notify_waiters();
     });
+
     #[cfg(unix)]
     {
         let shutdown_clone = shutdown.clone();
@@ -93,6 +100,7 @@ async fn main() -> Result<()> {
             Ok::<(), anyhow::Error>(())
         });
     }
+
     #[cfg(windows)]
     {
         let shutdown_clone = shutdown.clone();

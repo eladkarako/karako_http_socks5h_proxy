@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-pub(crate) use http::{Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
+
+pub(crate) use http::{Request, Response, StatusCode};
 
 pub fn extract_host(
     uri: &hyper::Uri,

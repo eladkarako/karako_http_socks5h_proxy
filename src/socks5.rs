@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+
 const SOCKS5_VERSION: u8 = 5;
 const SOCKS5_CMD_CONNECT: u8 = 1;
 const SOCKS5_ATYP_DOMAIN: u8 = 3;
