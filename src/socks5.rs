@@ -1,3 +1,6 @@
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
 use anyhow::{bail, ensure, Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -21,15 +24,28 @@ const SOCKS5_ERRORS: &[&str] = &[
     "Command not supported",
     "Address type not supported",
 ];
+
 pub async fn connect_to_socks5_server(
     upstream_port: u16
 ) -> Result<TcpStream> {
     let addr = format!("127.0.0.1:{}", upstream_port);
-    let stream = timeout(SOCKS5_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr)).await.with_context(|| format!("Failed (or {:?} timeout) to connect to SOCKS5 server at {}", SOCKS5_HANDSHAKE_TIMEOUT, addr))?.context("SOCKS5 connection failed")?;
-    stream.set_nodelay(true).context("Failed to set TCP_NODELAY")?;
+    let stream = timeout(SOCKS5_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr))
+        .await
+        .with_context(|| {
+            format!(
+                "Failed (or {:?} timeout) to connect to SOCKS5 server at {}",
+                SOCKS5_HANDSHAKE_TIMEOUT, addr
+            )
+        })?
+        .context("SOCKS5 connection failed")?;
+    configure_tokio_socket(
+        &stream,
+        SocketConfiguration::SOCKS_HANDSHAKE,
+    )?;
     eprintln!("[SOCKS5] Connected to {}", addr);
     Ok(stream)
 }
+
 pub async fn establish_socks5_connection(
     stream: &mut TcpStream,
     host: &str,
@@ -43,6 +59,7 @@ pub async fn establish_socks5_connection(
     eprintln!("[SOCKS5] Handshake complete for {}:{}", host, port);
     Ok(())
 }
+
 async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
     let greeting = [SOCKS5_VERSION, 1, 0];
     timeout(SOCKS5_HANDSHAKE_TIMEOUT, stream.write_all(&greeting))
@@ -52,6 +69,7 @@ async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
     eprintln!("[SOCKS5] Sent greeting: {:?}", greeting);
     Ok(())
 }
+
 async fn receive_socks5_greeting_response(
     stream: &mut TcpStream
 ) -> Result<()> {
@@ -73,6 +91,7 @@ async fn receive_socks5_greeting_response(
     ensure!(resp[1] != 0xff, "SOCKS5 server rejected all methods");
     Ok(())
 }
+
 async fn send_socks5_connect_request(
     stream: &mut TcpStream,
     host: &str,
@@ -152,6 +171,7 @@ async fn send_socks5_connect_request(
     eprintln!("[SOCKS5] CONNECT request sent successfully");
     Ok(())
 }
+
 async fn receive_socks5_connect_response(
     stream: &mut TcpStream
 ) -> Result<()> {
@@ -193,6 +213,7 @@ async fn receive_socks5_connect_response(
     read_socks5_bind_address(stream, resp_header[3]).await?;
     Ok(())
 }
+
 async fn read_socks5_bind_address(
     stream: &mut TcpStream,
     atyp: u8,
