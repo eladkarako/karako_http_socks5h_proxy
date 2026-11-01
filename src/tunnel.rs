@@ -22,7 +22,7 @@ pub async fn handle_tunnel(
         TUNNEL_TIMEOUT,
         copy_bidirectional(&mut client, &mut target),
     )
-    .await;
+        .await;
     match result {
         Ok(Ok((client_to_target, target_to_client))) => {
             eprintln!(

@@ -77,18 +77,18 @@ pub fn configure_tokio_socket(
     socket_ref
         .set_linger(Some(Duration::from_secs(5)))
         .context("Failed to set SO_LINGER")?;
-    socket_ref.set_recv_buffer_size(config.recv_buffer).context(
-        format!(
+    socket_ref
+        .set_recv_buffer_size(config.recv_buffer)
+        .context(format!(
             "Failed to set SO_RCVBUF to {} bytes",
             config.recv_buffer
-        ),
-    )?;
-    socket_ref.set_send_buffer_size(config.send_buffer).context(
-        format!(
+        ))?;
+    socket_ref
+        .set_send_buffer_size(config.send_buffer)
+        .context(format!(
             "Failed to set SO_SNDBUF to {} bytes",
             config.send_buffer
-        ),
-    )?;
+        ))?;
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
     apply_linux_optimizations(&socket_ref, &config)?;

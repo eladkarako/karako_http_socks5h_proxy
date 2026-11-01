@@ -31,9 +31,9 @@ impl Service<Request<Incoming>> for Socks5Http2ProxyService {
     type Future = Pin<
         Box<
             dyn std::future::Future<
-                    Output = Result<Self::Response, Self::Error>,
-                > + Send
-                + 'static,
+                Output=Result<Self::Response, Self::Error>,
+            > + Send
+            + 'static,
         >,
     >;
 
@@ -70,13 +70,15 @@ pub async fn handle_http2_client_connection(
 ) -> anyhow::Result<()> {
     eprintln!("[HTTP/2 CLIENT] New connection from {}", addr);
     let io = hyper_util::rt::TokioIo::new(socket);
-    let service =
-        Socks5Http2ProxyService { upstream_port, client_addr: addr };
+    let service = Socks5Http2ProxyService {
+        upstream_port,
+        client_addr: addr,
+    };
     match hyper::server::conn::http2::Builder::new(
         hyper_util::rt::TokioExecutor::new(),
     )
-    .serve_connection(io, service)
-    .await
+        .serve_connection(io, service)
+        .await
     {
         Ok(_) => {
             eprintln!(
@@ -153,6 +155,6 @@ async fn handle_http_request(
         forward_req,
         &method,
     )
-    .await?;
+        .await?;
     Ok(response)
 }

@@ -163,9 +163,9 @@ async fn send_socks5_connect_request(
         SOCKS5_HANDSHAKE_TIMEOUT,
         stream.write_all(&connect_req),
     )
-    .await
-    .context("SOCKS5 CONNECT write timeout")?
-    .context("Failed to send SOCKS5 CONNECT")?;
+        .await
+        .context("SOCKS5 CONNECT write timeout")?
+        .context("Failed to send SOCKS5 CONNECT")?;
     stream
         .flush()
         .await
@@ -182,9 +182,9 @@ async fn receive_socks5_connect_response(
         SOCKS5_HANDSHAKE_TIMEOUT,
         stream.read_exact(&mut resp_header),
     )
-    .await
-    .context("SOCKS5 CONNECT response read timeout")?
-    .context("Failed to read SOCKS5 CONNECT response")?;
+        .await
+        .context("SOCKS5 CONNECT response read timeout")?
+        .context("Failed to read SOCKS5 CONNECT response")?;
     eprintln!(
         "[SOCKS5] Raw response bytes: [0x{:02X}, 0x{:02X}, 0x{:02X}, 0x{:02X}]",
         resp_header[0],
@@ -227,9 +227,9 @@ async fn read_socks5_bind_address(
                 Duration::from_secs(10),
                 stream.read_exact(&mut addr_port),
             )
-            .await
-            .context("SOCKS5 IPv4 response read timeout")?
-            .context("Failed to read SOCKS5 IPv4 response")?;
+                .await
+                .context("SOCKS5 IPv4 response read timeout")?
+                .context("Failed to read SOCKS5 IPv4 response")?;
             eprintln!("[SOCKS5] IPv4 response: {:?}", addr_port);
         }
         SOCKS5_ATYP_DOMAIN => {
