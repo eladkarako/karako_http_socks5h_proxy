@@ -4,6 +4,8 @@
 
 /*.zip
 
+*.bak
+
 /Cargo.lock
 
 /target/
