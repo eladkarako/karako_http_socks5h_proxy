@@ -59,10 +59,8 @@ const file_manipulation = async (file)=>{
 
   let modified_content = content;
   modified_content = modified_content.replace(/\r+/gms,"")
-                                     .replace(/}\n*pub\s+(async|fn|struct|enum|trait|impl|mod|type|const|static)/gms, "}\n\npub $1")
-                                     .replace(/}\n*(async|fn|struct|enum|trait|impl|mod|type|const|static)/gms, "}\n\n$1")
-                                     .replace(/;\n*pub\s+(async|fn|struct|impl|mod)/gms, ";\n\npub $1")
-                                     .replace(/;\n*(async|fn|struct|impl|mod)/gms, ";\n\n$1")
+                                     .replace(/}\n*(\s*)(#\[|pub|async|fn|struct|enum|trait|impl|mod|type|const|static)/gms, "}\n\n$1$2")
+                                     .replace(/;\n*(\s*)(#\[|pub|async|fn|struct|impl|mod)/gms, ";\n\n$1$2")
                                      .replace(/\n/gms,EOL)
                                      ;
 
