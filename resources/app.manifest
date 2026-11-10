@@ -11,7 +11,10 @@
      <windowsSettings> <dpiAware      xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/PM</dpiAware>                     </windowsSettings> 
      <windowsSettings> <dpiAwareness  xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2,PerMonitor</dpiAwareness> </windowsSettings> 
      <windowsSettings> <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>                   </windowsSettings> 
-     <windowsSettings> <heapType      xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">SegmentHeap</heapType>                 </windowsSettings> 
+     <!-- note: switching to mimalloc for windows os too! segmented heap is disabled, by not opt-in it in this manifest, code uses classic NT heap for windows os, mimalloc requests its memory from the OS directly rather than through the process heap. -->
+     <!--
+     <windowsSettings> <heapType      xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">SegmentHeap</heapType>                 </windowsSettings>
+     -->
   </application> 
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"> 
     <security> 

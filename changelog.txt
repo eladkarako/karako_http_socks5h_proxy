@@ -1,4 +1,7 @@
-26.11.01
+26.11.11
+* use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
+
+26.11.1
 * (logic improvement) applying socket optimization when possible. SO_RCVBUF, SO_SNDBUF, TCP_NODELAY, TCP_CORK (linux only), TCP_QUICKACK (linux - actual, window - ACK frequency TCP_ACK_FREQUENCY), keepalive!!!!(retry+idle+interval)
 * (project architecture) splitting (finally) the "work-in" single main.rs to logical module with same functionality for now (no tests yet). fixing pub/crate use logic.
 * (bug fix) trying (with limited success) to explicitly tell the program to not try to read the request body, when method is HEAD or http status is 204 or 304 which has no request body. it still quirky.

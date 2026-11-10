@@ -11,7 +11,7 @@ name = "karako_http_socks5h_proxy"
 readme = "README.md"
 repository = "https://github.com/eladkarako/karako_http_socks5h_proxy"
 rust-version = "1.93.0"
-version = "26.11.1"
+version = "26.11.11"
 
 [dependencies]
 anyhow = { version = "1.0.104" }
@@ -30,28 +30,28 @@ socket2 = { version = "0.6.5", features = ["all"] }
 #tower = { version = "0.5.3", features = ["util", "tokio", "tokio-stream", "tokio-util"] }
 #tower-service = { version = "0.3.3" }
 
-[target.'cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86", target_arch = "aarch64")))'.dependencies]
+[target.'cfg(all(any(target_os="linux",target_os="windows"),any(target_arch="x86_64",target_arch="x86",target_arch="aarch64")))'.dependencies]
 mimalloc = { version = "0.1.52" }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
-toml = "1.1.8"
+toml = "1.2.1"
 winres = "0.1.12"
 
 [target.i686-pc-windows-msvc.build-dependencies]
-toml = "1.1.8"
+toml = "1.2.1"
 winres = "0.1.12"
 
 [target.aarch64-pc-windows-msvc.build-dependencies]
-toml = "1.1.8"
+toml = "1.2.1"
 winres = "0.1.12"
 
 
 [profile.release]
-lto = true                                                          # Link-time optimization across compilation units, for better performances.
 codegen-units = 1                                                   # Single unit for better LTO optimization and smaller binary size.
+debug = false                                                       # Removes debug symbols for smaller binary.
 incremental = false                                                 # Disable incremental compilation for cleaner builds, prevents stale build artifacts in release mode.
+lto = true                                                          # Link-time optimization across compilation units, for better performances.
 opt-level = 3                                                       # prioritizes speed (loop unrolling, better branch prediction, instruction cache fit) over binary size. use value "z" (instead of 3) for optimizing size.
 panic = "abort"                                                     # Replace unwinding with abort (smaller binary, faster panics).
 rpath = false                                                       # Do not embed runtime library search paths which prevents runtime path issues, needed for static builds.
-debug = false                                                       # Removes debug symbols for smaller binary.
 strip = true                                                        # Removes all symbols from final binary minimizes its size.

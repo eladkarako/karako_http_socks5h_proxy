@@ -1,5 +1,8 @@
 # @formatter:off
 
+[http]
+#proxy       = "socks5h://127.0.0.1:9150"  #TOR browser piggyback its tor execute
+
 [build]
 incremental = false
 jobs        = 8
