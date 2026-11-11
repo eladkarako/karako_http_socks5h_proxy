@@ -42,6 +42,21 @@ pub(crate) struct Target {
     pub port: u16,
 }
 
+/// An error caused by the client sending an invalid request target.
+#[derive(Debug)]
+pub(crate) struct BadRequestError(pub String);
+
+impl std::fmt::Display for BadRequestError {
+    fn fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for BadRequestError {}
+
 /// Parses the request target, falling back to the `Host` header when the
 /// request URI only carries an origin-form path.
 ///
@@ -62,13 +77,24 @@ pub(crate) fn extract_target(
     let host_header = req
         .headers()
         .get(http::header::HOST)
-        .context("Request has neither an authority nor a Host header")?;
-    let host_str = host_header
-        .to_str()
-        .context("Invalid Host header encoding")?;
-    let authority: http::uri::Authority = host_str
-        .parse()
-        .context("Invalid Host header authority")?;
+        .ok_or_else(|| {
+            BadRequestError(
+                "request has neither an authority nor a Host header"
+                    .to_string(),
+            )
+        })?;
+    let host_str = host_header.to_str().map_err(|_| {
+        BadRequestError(
+            "Host header is not valid ASCII".to_string(),
+        )
+    })?;
+    let authority: http::uri::Authority =
+        host_str.parse().map_err(|_| {
+            BadRequestError(format!(
+                "invalid Host header authority: {}",
+                host_str
+            ))
+        })?;
     Ok(Target {
         host: authority.host().to_string(),
         port: authority
