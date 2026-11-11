@@ -15,7 +15,10 @@ pub(crate) struct IdleTimeoutBody<B> {
 }
 
 impl<B> IdleTimeoutBody<B> {
-    pub(crate) fn new(body: B, idle: Duration) -> Self {
+    pub(crate) fn new(
+        body: B,
+        idle: Duration,
+    ) -> Self {
         Self {
             inner: Box::pin(body),
             idle,
@@ -25,9 +28,9 @@ impl<B> IdleTimeoutBody<B> {
 }
 
 impl<B> Body for IdleTimeoutBody<B>
-where
-    B: Body<Data = bytes::Bytes> + 'static,
-    B::Error: std::error::Error + Send + Sync + 'static,
+    where
+        B: Body<Data=bytes::Bytes> + 'static,
+        B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Data = bytes::Bytes;
     type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -48,9 +51,9 @@ where
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => {
-                let timer = this
-                    .timer
-                    .get_or_insert_with(|| Box::pin(sleep(this.idle)));
+                let timer = this.timer.get_or_insert_with(|| {
+                    Box::pin(sleep(this.idle))
+                });
                 match timer.as_mut().poll(cx) {
                     Poll::Ready(()) => {
                         this.timer = None;

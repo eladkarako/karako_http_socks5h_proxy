@@ -42,13 +42,16 @@ impl Service<Request<Incoming>> for ProxyService {
     type Error = Infallible;
     type Future = Pin<
         Box<
-            dyn Future<Output = Result<Self::Response, Self::Error>>
-                + Send
-                + 'static,
+            dyn Future<Output=Result<Self::Response, Self::Error>>
+            + Send
+            + 'static,
         >,
     >;
 
-    fn call(&self, req: Request<Incoming>) -> Self::Future {
+    fn call(
+        &self,
+        req: Request<Incoming>,
+    ) -> Self::Future {
         let upstream_addr = self.upstream_addr;
         let client_addr = self.client_addr;
         let client = self.client.clone();
@@ -79,7 +82,8 @@ impl Service<Request<Incoming>> for ProxyService {
             Ok(result.unwrap_or_else(|e| {
                 log_error!(
                     "Request handling error from {}: {:#}",
-                    client_addr, e
+                    client_addr,
+                    e
                 );
                 error_response(&e)
             }))
@@ -120,10 +124,9 @@ pub async fn handle_client_connection(
         client,
         auth,
     };
-    let mut builder =
-        hyper_util::server::conn::auto::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        );
+    let mut builder = hyper_util::server::conn::auto::Builder::new(
+        hyper_util::rt::TokioExecutor::new(),
+    );
     builder
         .http1()
         .timer(hyper_util::rt::TokioTimer::new())

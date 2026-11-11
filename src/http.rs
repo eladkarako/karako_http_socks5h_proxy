@@ -41,11 +41,11 @@ pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
         body,
         UPSTREAM_BODY_IDLE_TIMEOUT,
     )
-    .boxed_unsync()
+        .boxed_unsync()
 }
 
 fn boxed_error(
-    error: impl std::error::Error + Send + Sync + 'static,
+    error: impl std::error::Error + Send + Sync + 'static
 ) -> Box<dyn std::error::Error + Send + Sync> {
     Box::new(error)
 }
@@ -76,7 +76,7 @@ impl std::error::Error for BadRequestError {}
 /// IPv6 literal hosts are kept in bracketed form (for example `[::1]`) so
 /// that they stay valid inside URLs and `Host` headers.
 pub(crate) fn extract_target(
-    req: &Request<Incoming>,
+    req: &Request<Incoming>
 ) -> Result<Target> {
     let uri = req.uri();
     if let Some(authority) = uri.authority() {
@@ -97,9 +97,7 @@ pub(crate) fn extract_target(
             )
         })?;
     let host_str = host_header.to_str().map_err(|_| {
-        BadRequestError(
-            "Host header is not valid ASCII".to_string(),
-        )
+        BadRequestError("Host header is not valid ASCII".to_string())
     })?;
     let authority: http::uri::Authority =
         host_str.parse().map_err(|_| {
@@ -157,8 +155,7 @@ pub fn build_forward_request(
         format!("http://{}:{}{}", host, port, path_query);
     let client_version = req.version();
     let (parts, body) = req.into_parts();
-    let connection_tokens =
-        connection_header_tokens(&parts.headers);
+    let connection_tokens = connection_header_tokens(&parts.headers);
     let mut forward_req = Request::builder()
         .method(method.clone())
         .uri(forward_url)
@@ -169,19 +166,18 @@ pub fn build_forward_request(
             continue;
         }
         if is_hop_by_hop(name, &connection_tokens) {
-            log_trace!("[HTTP] Dropping hop-by-hop header: {}", name);
+            log_trace!(
+                "[HTTP] Dropping hop-by-hop header: {}",
+                name
+            );
             continue;
         }
         forward_req = forward_req.header(name, value);
     }
-    forward_req = forward_req.header(
-        http::header::HOST,
-        format!("{}:{}", host, port),
-    );
-    forward_req = forward_req.header(
-        http::header::VIA,
-        via_value(client_version),
-    );
+    forward_req = forward_req
+        .header(http::header::HOST, format!("{}:{}", host, port));
+    forward_req = forward_req
+        .header(http::header::VIA, via_value(client_version));
     forward_req
         .body(body)
         .context("Failed to build forward request")
@@ -204,7 +200,7 @@ const HOP_BY_HOP_HEADERS: &[&str] = &[
 /// Header names listed in the `Connection` header are hop-by-hop as
 /// well, even if they are not in the standard list above.
 fn connection_header_tokens(
-    headers: &http::HeaderMap,
+    headers: &http::HeaderMap
 ) -> Vec<String> {
     headers
         .get_all(http::header::CONNECTION)
@@ -216,9 +212,14 @@ fn connection_header_tokens(
         .collect()
 }
 
-fn is_hop_by_hop(name: &str, connection_tokens: &[String]) -> bool {
+fn is_hop_by_hop(
+    name: &str,
+    connection_tokens: &[String],
+) -> bool {
     HOP_BY_HOP_HEADERS.contains(&name)
-        || connection_tokens.iter().any(|token| token == name)
+        || connection_tokens
+        .iter()
+        .any(|token| token == name)
 }
 
 fn should_forward_response_header(
@@ -258,14 +259,14 @@ pub async fn send_http_request(
         UPSTREAM_RESPONSE_HEADER_TIMEOUT,
         client.request(forward_req),
     )
-    .await
-    .with_context(|| {
-        format!(
-            "Timed out after {:?} waiting for upstream response headers",
-            UPSTREAM_RESPONSE_HEADER_TIMEOUT
-        )
-    })?
-    .context("Failed to send HTTP/1.1 request through SOCKS5")?;
+        .await
+        .with_context(|| {
+            format!(
+                "Timed out after {:?} waiting for upstream response headers",
+                UPSTREAM_RESPONSE_HEADER_TIMEOUT
+            )
+        })?
+        .context("Failed to send HTTP/1.1 request through SOCKS5")?;
     let (parts, body) = response.into_parts();
     log_debug!(
         "[UPSTREAM] -> {} in {:?} ({} response header(s))",
@@ -273,8 +274,7 @@ pub async fn send_http_request(
         started.elapsed(),
         parts.headers.len()
     );
-    let connection_tokens =
-        connection_header_tokens(&parts.headers);
+    let connection_tokens = connection_header_tokens(&parts.headers);
     let mut response_builder =
         Response::builder().status(parts.status);
     for (name, value) in parts.headers.iter() {
@@ -286,10 +286,8 @@ pub async fn send_http_request(
             response_builder = response_builder.header(name, value);
         }
     }
-    response_builder = response_builder.header(
-        http::header::VIA,
-        via_value(client_version),
-    );
+    response_builder = response_builder
+        .header(http::header::VIA, via_value(client_version));
     response_builder
         .body(box_incoming(body))
         .context("Failed to build response")

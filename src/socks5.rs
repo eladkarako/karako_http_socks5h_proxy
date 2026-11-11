@@ -49,9 +49,7 @@ impl Socks5Auth {
             (Some(username), Some(password)) => Self {
                 credentials: Some((username, password)),
             },
-            _ => Self {
-                credentials: None,
-            },
+            _ => Self { credentials: None },
         }
     }
 }
@@ -100,13 +98,13 @@ pub async fn establish_socks5_connection(
         SOCKS5_HANDSHAKE_TIMEOUT,
         perform_socks5_handshake(stream, host, port, auth),
     )
-    .await
-    .with_context(|| {
-        format!(
-            "SOCKS5 handshake timed out after {:?} for {}:{}",
-            SOCKS5_HANDSHAKE_TIMEOUT, host, port
-        )
-    })??;
+        .await
+        .with_context(|| {
+            format!(
+                "SOCKS5 handshake timed out after {:?} for {}:{}",
+                SOCKS5_HANDSHAKE_TIMEOUT, host, port
+            )
+        })??;
     log_info!(
         "[SOCKS5] Handshake complete for {}:{} in {:?}",
         host,
@@ -123,8 +121,7 @@ async fn perform_socks5_handshake(
     auth: &Socks5Auth,
 ) -> Result<()> {
     send_socks5_greeting(stream, auth).await?;
-    let method =
-        receive_socks5_greeting_response(stream).await?;
+    let method = receive_socks5_greeting_response(stream).await?;
     match method {
         SOCKS5_AUTH_METHOD_NONE => {}
         SOCKS5_AUTH_METHOD_USER_PASS => {
@@ -216,9 +213,8 @@ async fn perform_user_pass_auth(
         "SOCKS5 password is too long: {} bytes (max 255)",
         password.len()
     );
-    let mut request = Vec::with_capacity(
-        3 + username.len() + password.len(),
-    );
+    let mut request =
+        Vec::with_capacity(3 + username.len() + password.len());
     request.push(SOCKS5_AUTH_VERSION);
     request.push(username.len() as u8);
     request.extend_from_slice(username.as_bytes());
@@ -300,8 +296,7 @@ async fn send_socks5_connect_request(
         Socks5Address::Ipv6(_) => 16,
         Socks5Address::Domain(name) => 1 + name.len(),
     };
-    let mut connect_req =
-        Vec::with_capacity(4 + address_len + 2);
+    let mut connect_req = Vec::with_capacity(4 + address_len + 2);
     connect_req.extend_from_slice(&[
         SOCKS5_VERSION,
         SOCKS5_CMD_CONNECT,

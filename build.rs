@@ -47,14 +47,22 @@ fn get_first_author(package: &toml::Value) -> &str {
 fn parse_version(version: &str) -> (u64, u64, u64, u64) {
     let parts: Vec<&str> = version.split('.').collect();
 
-    let major =
-        parts.first().and_then(|v| v.parse().ok()).unwrap_or(0);
-    let minor =
-        parts.get(1).and_then(|v| v.parse().ok()).unwrap_or(0);
-    let patch =
-        parts.get(2).and_then(|v| v.parse().ok()).unwrap_or(0);
-    let release =
-        parts.get(3).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let major = parts
+        .first()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let minor = parts
+        .get(1)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let patch = parts
+        .get(2)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let release = parts
+        .get(3)
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
 
     (major, minor, patch, release)
 }
@@ -83,10 +91,13 @@ fn set_windows_resources(
     packed: u64,
 ) {
     let (major, minor, patch, release) = version;
-    let path_icon =
-        manifest_dir.join("resources").join("logos").join("app.ico");
-    let path_manifest =
-        manifest_dir.join("resources").join("app.manifest");
+    let path_icon = manifest_dir
+        .join("resources")
+        .join("logos")
+        .join("app.ico");
+    let path_manifest = manifest_dir
+        .join("resources")
+        .join("app.manifest");
 
     let mut res = WindowsResource::new();
     res.set_icon(path_icon.to_string_lossy().as_ref());
@@ -118,7 +129,8 @@ fn set_windows_resources(
         packed,
     );
 
-    res.compile().expect("Failed to compile Windows resources");
+    res.compile()
+       .expect("Failed to compile Windows resources");
 }
 
 #[cfg(target_os = "windows")]

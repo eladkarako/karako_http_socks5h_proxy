@@ -66,29 +66,21 @@ async fn main() -> Result<()> {
         args.socks5_password.clone(),
     );
 
-    let addr = std::net::SocketAddr::new(
-        args.bind,
-        args.http_port,
-    );
+    let addr = std::net::SocketAddr::new(args.bind, args.http_port);
     let upstream_addr = std::net::SocketAddr::new(
         args.upstream_host,
         args.upstream_port,
     );
 
-    let listener =
-        TcpListener::bind(addr).await.with_context(|| {
+    let listener = TcpListener::bind(addr)
+        .await
+        .with_context(|| {
             format!("Failed to bind HTTP listener on {}", addr)
         })?;
     configure_listener_socket(&listener);
 
-    log_info!(
-        "HTTP/1.1 + HTTP/2 proxy listening on {}",
-        addr
-    );
-    log_info!(
-        "Forwarding to upstream SOCKS5h on {}",
-        upstream_addr
-    );
+    log_info!("HTTP/1.1 + HTTP/2 proxy listening on {}", addr);
+    log_info!("Forwarding to upstream SOCKS5h on {}", upstream_addr);
     log_debug!(
         "[LOG] Level is {} (use -v for handshake details, -vv for packet dumps)",
         if args.quiet {
@@ -171,11 +163,11 @@ async fn main() -> Result<()> {
         });
     }
 
-    let connection_limit = Arc::new(Semaphore::new(
-        MAX_CONCURRENT_CONNECTIONS,
-    ));
+    let connection_limit =
+        Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
     let mut connections = JoinSet::new();
-    let upstream_client = upstream::build(upstream_addr, auth.clone());
+    let upstream_client =
+        upstream::build(upstream_addr, auth.clone());
 
     loop {
         tokio::select! {
@@ -257,13 +249,12 @@ async fn main() -> Result<()> {
         }
         drained
     })
-    .await;
+        .await;
 
     match drained {
-        Ok(count) => log_info!(
-            "Drained {} connection(s) cleanly.",
-            count
-        ),
+        Ok(count) => {
+            log_info!("Drained {} connection(s) cleanly.", count)
+        }
         Err(_) => {
             let remaining = connections.len();
             log_warn!(

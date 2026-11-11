@@ -38,7 +38,8 @@ pub async fn connect_through_socks5(
     let client_version = req.version();
     log_info!(
         "[CONNECT TUNNEL] Initiating tunnel to {}:{}",
-        host, port
+        host,
+        port
     );
     let target_stream =
         connect_to_socks5_server(upstream_addr).await?;
@@ -74,7 +75,8 @@ pub async fn connect_through_socks5(
             Ok(upgraded) => {
                 log_debug!(
                     "[CONNECT TUNNEL] Upgrade successful for {}:{}",
-                    host, port
+                    host,
+                    port
                 );
                 if let Err(e) = handle_tunnel(
                     upgraded,
@@ -86,14 +88,18 @@ pub async fn connect_through_socks5(
                 {
                     log_error!(
                         "[CONNECT TUNNEL] Tunnel error for {}:{}: {:#}",
-                        host, port, e
+                        host,
+                        port,
+                        e
                     );
                 }
             }
             Err(e) => {
                 log_warn!(
                     "[CONNECT TUNNEL] Upgrade failed for {}:{}: {}",
-                    host, port, e
+                    host,
+                    port,
+                    e
                 );
             }
         }
@@ -110,10 +116,12 @@ pub async fn handle_tunnel(
     let started = std::time::Instant::now();
     log_debug!(
         "[TUNNEL] Starting bidirectional tunnel for {}:{}",
-        host, port
+        host,
+        port
     );
     let client = hyper_util::rt::TokioIo::new(upgraded);
-    let (mut client_read, mut client_write) = tokio::io::split(client);
+    let (mut client_read, mut client_write) =
+        tokio::io::split(client);
     let (mut target_read, mut target_write) =
         tokio::io::split(target);
     let (client_to_target, target_to_client) = tokio::try_join!(
@@ -128,15 +136,19 @@ pub async fn handle_tunnel(
             TUNNEL_IDLE_TIMEOUT,
         ),
     )
-    .with_context(|| {
-        format!(
-            "Tunnel {}:{} failed (idle timeout is {:?})",
-            host, port, TUNNEL_IDLE_TIMEOUT
-        )
-    })?;
+        .with_context(|| {
+            format!(
+                "Tunnel {}:{} failed (idle timeout is {:?})",
+                host, port, TUNNEL_IDLE_TIMEOUT
+            )
+        })?;
     log_info!(
         "[TUNNEL] Tunnel {}:{} closed normally after {:?}: client→target: {} bytes, target→client: {} bytes",
-        host, port, started.elapsed(), client_to_target, target_to_client
+        host,
+        port,
+        started.elapsed(),
+        client_to_target,
+        target_to_client
     );
     Ok(())
 }
@@ -146,9 +158,9 @@ async fn copy_with_idle_timeout<R, W>(
     writer: &mut W,
     idle_timeout: Duration,
 ) -> io::Result<u64>
-where
-    R: AsyncRead + Unpin,
-    W: AsyncWrite + Unpin,
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
 {
     let mut buffer = vec![0u8; TUNNEL_BUFFER_SIZE];
     let mut copied = 0u64;

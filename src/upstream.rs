@@ -35,9 +35,8 @@ pub(crate) fn build(
     upstream_addr: std::net::SocketAddr,
     auth: Socks5Auth,
 ) -> UpstreamClient {
-    let mut builder = Client::builder(
-        hyper_util::rt::TokioExecutor::new(),
-    );
+    let mut builder =
+        Client::builder(hyper_util::rt::TokioExecutor::new());
     builder
         .pool_idle_timeout(POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
@@ -63,8 +62,8 @@ impl Service<Uri> for SocksConnector {
     type Error = Box<dyn std::error::Error + Send + Sync>;
     type Future = Pin<
         Box<
-            dyn Future<Output = Result<Self::Response, Self::Error>>
-                + Send,
+            dyn Future<Output=Result<Self::Response, Self::Error>>
+            + Send,
         >,
     >;
 
@@ -75,7 +74,10 @@ impl Service<Uri> for SocksConnector {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, uri: Uri) -> Self::Future {
+    fn call(
+        &mut self,
+        uri: Uri,
+    ) -> Self::Future {
         let upstream_addr = self.upstream_addr;
         let auth = self.auth.clone();
         Box::pin(async move {

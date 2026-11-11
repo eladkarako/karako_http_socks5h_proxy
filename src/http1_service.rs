@@ -23,7 +23,11 @@ pub(crate) async fn handle_http1_request(
     let (host, port) = (target.host, target.port);
     log_info!(
         "[HTTP/1.1] {} {} (host: {}:{}) from {}",
-        method, uri, host, port, client_addr
+        method,
+        uri,
+        host,
+        port,
+        client_addr
     );
     log_debug!(
         "[HTTP/1.1] {} header(s), body size hint: {:?}",
@@ -43,13 +47,14 @@ pub(crate) async fn handle_http1_request(
         }
         _ => {
             let forward_req = build_forward_request(
-                &method,
-                &uri,
-                &host,
-                port,
-                req,
+                &method, &uri, &host, port, req,
             )?;
-            http::send_http_request(&client, forward_req, &method, version)
+            http::send_http_request(
+                &client,
+                forward_req,
+                &method,
+                version,
+            )
                 .await
         }
     };

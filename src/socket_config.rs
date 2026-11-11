@@ -152,7 +152,9 @@ fn report<T>(
     if let Err(error) = result {
         log_warn!(
             "[SOCKET] [{}] Failed to set {}: {}",
-            socket_name, option, error
+            socket_name,
+            option,
+            error
         );
     }
 }

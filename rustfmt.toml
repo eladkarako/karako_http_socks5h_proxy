@@ -2,8 +2,13 @@
 
 edition = "2024"
 style_edition = "2024"
-max_width = 69
+
+max_width = 69                    # make lines more readable (default 100)
+chain_width = 40                  # break more chained methods over multiple lines (default 60)
+use_small_heuristics = "Default"  # don't scale chain_width to max_width
+fn_params_layout = "Vertical"     # more strict than "Tall". breaks functions lines over multiple lines.
+fn_args_layout = "Vertical"       # (old name)
+
 reorder_modules = true
 reorder_imports = true
-fn_params_layout = "Vertical"
-#use_small_heuristics = "Max"
+newline_style = "Windows"

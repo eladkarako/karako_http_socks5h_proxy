@@ -18,7 +18,10 @@ static LEVEL: AtomicU8 = AtomicU8::new(Level::Info as u8);
 /// Without flags the proxy reports one line per request plus
 /// connection-level events. `-v` adds handshake, socket and timing
 /// details; `-vv` also dumps the raw SOCKS5 packets.
-pub fn init(quiet: bool, verbose: u8) {
+pub fn init(
+    quiet: bool,
+    verbose: u8,
+) {
     let level = if quiet {
         Level::Error
     } else {
@@ -39,7 +42,8 @@ pub fn enabled(level: Level) -> bool {
 /// tracing.
 pub fn hex_dump(bytes: &[u8]) -> String {
     use std::fmt::Write;
-    let mut out = String::with_capacity(bytes.len() * 3 + bytes.len() / 8);
+    let mut out =
+        String::with_capacity(bytes.len() * 3 + bytes.len() / 8);
     for (index, byte) in bytes.iter().enumerate() {
         if index > 0 && index % 16 == 0 {
             out.push('\n');

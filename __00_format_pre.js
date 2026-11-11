@@ -37,7 +37,7 @@ if (!process.argv[2]) {
   process.exit(1);
 }
 
-const EOL         = require("os").EOL
+const EOL         = "\r\n" //require("os").EOL
      ,TIMESTAMP   = (new Date()).toISOString().replace(/[\-T\:]+/gm,"_").replace(/\..+$/gm,"")
      ,fs          = require("fs/promises")
      ,path        = require("path")

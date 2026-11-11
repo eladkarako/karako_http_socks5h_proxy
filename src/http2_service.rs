@@ -23,7 +23,11 @@ pub(crate) async fn handle_h2_request(
     let (host, port) = (target.host, target.port);
     log_info!(
         "[HTTP/2] {} {} (host: {}:{}) from {}",
-        method, uri, host, port, client_addr
+        method,
+        uri,
+        host,
+        port,
+        client_addr
     );
     log_debug!(
         "[HTTP/2] {} header(s), body size hint: {:?}",
@@ -45,7 +49,12 @@ pub(crate) async fn handle_h2_request(
             let forward_req = build_forward_request(
                 &method, &uri, &host, port, req,
             )?;
-            http::send_http_request(&client, forward_req, &method, version)
+            http::send_http_request(
+                &client,
+                forward_req,
+                &method,
+                version,
+            )
                 .await
         }
     };
