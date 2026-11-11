@@ -6,6 +6,15 @@ use std::convert::Infallible;
 
 pub(crate) use http::{Request, Response, StatusCode};
 
+/// How long an upstream response body may go without producing a frame
+/// before the stream is aborted.
+const UPSTREAM_BODY_IDLE_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(60);
+
+/// How long to wait for upstream response headers before giving up.
+const UPSTREAM_RESPONSE_HEADER_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(120);
+
 /// Type-erased body used for every proxy response.
 ///
 /// The error is boxed so that a streamed upstream body can be passed
@@ -28,7 +37,11 @@ pub(crate) fn full_body(body: impl Into<Bytes>) -> BoxBody {
 }
 
 pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
-    body.map_err(boxed_error).boxed_unsync()
+    crate::body::IdleTimeoutBody::new(
+        body,
+        UPSTREAM_BODY_IDLE_TIMEOUT,
+    )
+    .boxed_unsync()
 }
 
 fn boxed_error(
@@ -222,10 +235,18 @@ pub async fn send_http_request(
             log_warn!("Upstream HTTP/1.1 connection error: {}", e);
         }
     });
-    let response = sender
-        .send_request(forward_req)
-        .await
-        .context("Failed to send HTTP/1.1 request through SOCKS5")?;
+    let response = tokio::time::timeout(
+        UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+        sender.send_request(forward_req),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "Timed out after {:?} waiting for upstream response headers",
+            UPSTREAM_RESPONSE_HEADER_TIMEOUT
+        )
+    })?
+    .context("Failed to send HTTP/1.1 request through SOCKS5")?;
     let (parts, body) = response.into_parts();
     log_debug!(
         "[UPSTREAM] -> {} in {:?} ({} response header(s))",

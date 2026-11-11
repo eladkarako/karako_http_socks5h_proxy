@@ -14,6 +14,8 @@ mod logging;
 
 mod args;
 
+mod body;
+
 mod http;
 
 mod proxy;
