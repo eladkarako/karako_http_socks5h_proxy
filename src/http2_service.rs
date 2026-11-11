@@ -38,7 +38,6 @@ pub(crate) async fn handle_h2_request(
                 host,
                 port,
                 upstream_port,
-                true,
             )
                 .await
         }

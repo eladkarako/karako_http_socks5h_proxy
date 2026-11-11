@@ -31,7 +31,6 @@ pub async fn connect_through_socks5(
     host: String,
     port: u16,
     upstream_port: u16,
-    over_http2: bool,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     log_info!(
@@ -55,15 +54,11 @@ pub async fn connect_through_socks5(
         "[CONNECT TUNNEL] SOCKS5 connection established in {:?}, sending 200 OK",
         started.elapsed()
     );
-    let mut response_builder =
-        Response::builder().status(StatusCode::OK);
-    // `Connection` is a hop-by-hop header and must not appear in an
-    // HTTP/2 response; h2 upgrades are implicit on a 2xx reply.
-    if !over_http2 {
-        response_builder = response_builder
-            .header(http::header::CONNECTION, "Upgrade");
-    }
-    let response = response_builder
+    // A 2xx response to CONNECT switches both HTTP/1.1 and HTTP/2 to a
+    // raw tunnel, so no upgrade headers are needed (and hop-by-hop
+    // headers must not be sent at all).
+    let response = Response::builder()
+        .status(StatusCode::OK)
         .body(empty_body())
         .context("Failed to build CONNECT response")?;
     tokio::spawn(async move {

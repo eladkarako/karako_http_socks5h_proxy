@@ -10,6 +10,8 @@ Usage: karako_http_socks5h_proxy [OPTIONS]
 Options:
   -p, --http-port <HTTP_PORT>          [default: 8765]
   -u, --upstream-port <UPSTREAM_PORT>  [default: 5678]
+  -v, --verbose...                     Increase log verbosity (use twice to dump SOCKS5 packets)
+  -q, --quiet                          Only log errors
   -h, --help                           Print help
   -V, --version                        Print version
 ```
@@ -32,11 +34,10 @@ you can set firefox and edge browsers to use it as HTTP proxy, and it works very
 
 by design limitations: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstream server and this program must run on same machine.  
 
-known issues/bugs: in `HEAD` (and probably `HTTP 204` and `HTTP 304`) there is zero length body which trigger some quirk in `hyper`. I'm trying to work around it.  
-
 binaries provided, supports many OS and architectures.
 
-still under development so a lot of debug information is written..
+logging: by default the proxy writes one line per request and for each CONNECT tunnel.  
+add `-v` for handshake, socket and timing details, `-vv` to also dump the raw SOCKS5 packets, or `-q` to only log errors.  
 
 </details>
 
@@ -53,8 +54,9 @@ still under development so a lot of debug information is written..
 <hr/>
 
 Key features:
-- Protocol detection: Automatically detects HTTP/1.1 vs HTTP/2
-- CONNECT support: Full HTTPS tunneling with 10-minute timeouts
+- Protocol detection: HTTP/1.1 and HTTP/2 handled by `hyper-util`'s auto server
+- CONNECT support: HTTPS tunneling over HTTP/1.1 and HTTP/2, with a 5-minute idle timeout
+- Streaming: request and response bodies are forwarded as they arrive, never buffered whole
 - SOCKS5h compliant: Uses domain names instead of IP addresses (privacy-friendly)
 - Optimized: LTO compilation, socket tuning, graceful shutdown
 - Cross-platform: Windows icons/manifests, Linux mimalloc, tested on x86_64/ARM
@@ -86,7 +88,7 @@ The following diagrams cover:
               ↓
     ┌─────────────────────────┐
     │  Protocol Detection     │
-    │  (peek first 24 bytes)  │
+    │  (hyper-util auto)      │
     └──────────┬──────────────┘
                |
         ┌──────┴──────┐
@@ -104,13 +106,13 @@ The following diagrams cover:
          ┌──────▼──────────────────┐
          │  Request Processing     │
          │ • Extract host:port     │
-         │ • Read body             │
+         │ • Stream body           │
          │ • Build forward request │
          └──────┬──────────────────┘
                 |
          ┌──────▼──────────────────┐
          │ SOCKS5h Connection      │
-         │ • Handshake (30s)       │
+         │ • Handshake (10s)       │
          │ • Domain-based routing  │
          │ • DNS on upstream       │
          └──────┬──────────────────┘
@@ -184,7 +186,7 @@ Client                         Proxy                    Upstream Target
   |                               |                              |
   |  [bidirectional HTTPS copy]   |                              |
   |◄──────────────────────────────────────────────────────────►|
-  |                               | (10-minute timeout)          |
+  |                               | (5-minute idle timeout)      |
   |                               |                              |
   |        [connection close]     |                              |
   |─────────────────────────────>|────────────────────────────>|
@@ -233,23 +235,19 @@ HTTP Proxy (Client)            SOCKS5h Server (Upstream)
 
 ```txt
 ================================================================================
-           PROTOCOL DETECTION (First 24 Bytes)
+           PROTOCOL DETECTION (hyper-util auto server)
 ================================================================================
 
-Received Data              Pattern Match       Handler
-──────────────────────────────────────────────────────────
-"PRI * HTTP/2.0"   ──>   HTTP/2 Preface   ──>  HTTP/2 Service
-                         (RFC 9113)
+Incoming bytes                    Detected protocol     Handler
+──────────────────────────────────────────────────────────────────
+"PRI * HTTP/2.0" preface     ──>  HTTP/2            ──>  HTTP/2 Service
+                                (RFC 9113)
 
-"GET / HTTP/1.1"   ──>   HTTP/1.1 Method  ──>  HTTP/1.1 Service
-"POST / HTTP/1.1"        + CRLF pattern
-"CONNECT : HTTP/1.1"
+Any HTTP/1.x request line    ──>  HTTP/1.1          ──>  HTTP/1.1 Service
+(GET, POST, CONNECT, ...)
 
-"OPTIONS / HTTP/1.1"
-"DELETE / HTTP/1.1"
-
-[Other data]       ──>   Unknown           ──>  Error: Protocol not supported
-                         (< 4 bytes)       ──>  Error: Connection closed
+TLS ClientHello / other      ──>  Not HTTP          ──>  Connection closed
+binary garbage
 ```
 
 <hr/>
@@ -266,7 +264,7 @@ Inbound (client accept)  ──>  CLIENT_INBOUND
                               • Socket tuning
 
 SOCKS5 handshake        ──>  SOCKS_HANDSHAKE
-                              • 30s timeout
+                              • 10s timeout
                               • Handshake-specific opts
 
 HTTP request forward    ──>  SOCKS_HTTP_REQUEST
@@ -274,7 +272,7 @@ HTTP request forward    ──>  SOCKS_HTTP_REQUEST
 
 CONNECT tunnel          ──>  SOCKS_TUNNEL
                               • Tunnel-specific opts
-                              • 10-minute timeout
+                              • 5-minute idle timeout
 ```
 
 <hr/>
@@ -286,13 +284,13 @@ CONNECT tunnel          ──>  SOCKS_TUNNEL
 
 Request Processing
        |
-       ├─> Protocol Detection Error
-       |   └─> 500 / Connection Close
+       ├─> Malformed Request / Missing Host
+       |   └─> 400 Bad Request
        |
        ├─> Host/Port Extraction Error
-       |   └─> 400 Bad Gateway
+       |   └─> 400 Bad Request
        |
-       ├─> SOCKS5 Connection Error (30s timeout)
+       ├─> SOCKS5 Connection Error (10s timeout)
        |   ├─> Connection refused
        |   └─> 502 Bad Gateway
        |
@@ -305,8 +303,8 @@ Request Processing
        ├─> HTTP Request Forward Error
        |   └─> 502 Bad Gateway
        |
-       └─> Tunnel Timeout (10 minutes)
-           └─> Connection close + Error log
+       └─> Tunnel idle for 5 minutes
+           └─> Connection close + warning log
 ```
 
 <hr/>

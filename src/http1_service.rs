@@ -35,7 +35,6 @@ pub(crate) async fn handle_http1_request(
                 host,
                 port,
                 upstream_port,
-                false,
             )
                 .await
         }
