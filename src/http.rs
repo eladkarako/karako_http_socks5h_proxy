@@ -128,6 +128,20 @@ fn default_port(
     }
 }
 
+/// Value used for the RFC 9110 `Via` header.
+///
+/// The version reflects the protocol of the message that entered the
+/// proxy, and the pseudonym identifies this proxy.
+pub(crate) fn via_value(version: http::Version) -> String {
+    let protocol = match version {
+        http::Version::HTTP_10 => "1.0",
+        http::Version::HTTP_2 => "2",
+        http::Version::HTTP_3 => "3",
+        _ => "1.1",
+    };
+    format!("{} {}", protocol, env!("CARGO_PKG_NAME"))
+}
+
 pub fn build_forward_request(
     method: &http::Method,
     uri: &hyper::Uri,
@@ -141,6 +155,7 @@ pub fn build_forward_request(
         .unwrap_or_else(|| "/".to_string());
     let forward_url =
         format!("http://{}:{}{}", host, port, path_query);
+    let client_version = req.version();
     let (parts, body) = req.into_parts();
     let connection_tokens =
         connection_header_tokens(&parts.headers);
@@ -162,6 +177,10 @@ pub fn build_forward_request(
     forward_req = forward_req.header(
         http::header::HOST,
         format!("{}:{}", host, port),
+    );
+    forward_req = forward_req.header(
+        http::header::VIA,
+        via_value(client_version),
     );
     forward_req
         .body(body)
@@ -217,6 +236,7 @@ pub async fn send_http_request(
     client: &crate::upstream::UpstreamClient,
     forward_req: Request<Incoming>,
     method: &http::Method,
+    client_version: http::Version,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     log_debug!(
@@ -225,6 +245,15 @@ pub async fn send_http_request(
         forward_req.uri(),
         forward_req.headers().len()
     );
+    if crate::logging::enabled(crate::logging::Level::Trace) {
+        for (name, value) in forward_req.headers().iter() {
+            log_trace!(
+                "[UPSTREAM] Request header: {}: {}",
+                name,
+                value.to_str().unwrap_or("<binary>")
+            );
+        }
+    }
     let response = tokio::time::timeout(
         UPSTREAM_RESPONSE_HEADER_TIMEOUT,
         client.request(forward_req),
@@ -257,6 +286,10 @@ pub async fn send_http_request(
             response_builder = response_builder.header(name, value);
         }
     }
+    response_builder = response_builder.header(
+        http::header::VIA,
+        via_value(client_version),
+    );
     response_builder
         .body(box_incoming(body))
         .context("Failed to build response")

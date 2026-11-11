@@ -35,6 +35,7 @@ pub async fn connect_through_socks5(
     auth: Socks5Auth,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
+    let client_version = req.version();
     log_info!(
         "[CONNECT TUNNEL] Initiating tunnel to {}:{}",
         host, port
@@ -62,6 +63,10 @@ pub async fn connect_through_socks5(
     // headers must not be sent at all).
     let response = Response::builder()
         .status(StatusCode::OK)
+        .header(
+            http::header::VIA,
+            crate::http::via_value(client_version),
+        )
         .body(empty_body())
         .context("Failed to build CONNECT response")?;
     tokio::spawn(async move {

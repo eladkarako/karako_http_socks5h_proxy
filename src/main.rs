@@ -155,6 +155,20 @@ async fn main() -> Result<()> {
                 shutdown_clone.notify_one();
             }
         });
+
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move {
+            if let Ok(mut ctrl_close) =
+                tokio::signal::windows::ctrl_close()
+            {
+                ctrl_close.recv().await;
+                log_info!(
+                    "{}Console close received, shutting down gracefully...",
+                    EOL
+                );
+                shutdown_clone.notify_one();
+            }
+        });
     }
 
     let connection_limit = Arc::new(Semaphore::new(

@@ -17,6 +17,7 @@ pub(crate) async fn handle_h2_request(
     let started = std::time::Instant::now();
     let method = req.method().clone();
     let uri = req.uri().clone();
+    let version = req.version();
     let header_count = req.headers().len();
     let target = extract_target(&req)?;
     let (host, port) = (target.host, target.port);
@@ -44,7 +45,7 @@ pub(crate) async fn handle_h2_request(
             let forward_req = build_forward_request(
                 &method, &uri, &host, port, req,
             )?;
-            http::send_http_request(&client, forward_req, &method)
+            http::send_http_request(&client, forward_req, &method, version)
                 .await
         }
     };
