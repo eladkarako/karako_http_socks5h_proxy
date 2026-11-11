@@ -9,6 +9,9 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+#[macro_use]
+mod logging;
+
 mod args;
 
 mod http;
@@ -49,6 +52,7 @@ const EOL: &str = "\n";
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = args::parse_and_validate()?;
+    logging::init(args.quiet, args.verbose);
 
     let addr: std::net::SocketAddr =
         format!("127.0.0.1:{}", args.http_port)
@@ -64,20 +68,32 @@ async fn main() -> Result<()> {
         })?;
     configure_listener_socket(&listener);
 
-    eprintln!(
+    log_info!(
         "HTTP/1.1 + HTTP/2 proxy listening on 127.0.0.1:{}",
         args.http_port
     );
-    eprintln!(
+    log_info!(
         "Forwarding to upstream SOCKS5h on 127.0.0.1:{}",
         args.upstream_port
+    );
+    log_debug!(
+        "[LOG] Level is {} (use -v for handshake details, -vv for packet dumps)",
+        if args.quiet {
+            "error"
+        } else {
+            match args.verbose {
+                0 => "info",
+                1 => "debug",
+                _ => "trace",
+            }
+        }
     );
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
     tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-        eprintln!(
+        log_info!(
             "{}Ctrl+C received, shutting down gracefully...",
             EOL
         );
@@ -93,7 +109,7 @@ async fn main() -> Result<()> {
             )
                 .context("Failed to listen for SIGTERM")?;
             sigterm.recv().await;
-            eprintln!(
+            log_info!(
                 "{}SIGTERM received, shutting down gracefully...",
                 EOL
             );
@@ -110,7 +126,7 @@ async fn main() -> Result<()> {
                 tokio::signal::windows::ctrl_break()
             {
                 ctrl_break.recv().await;
-                eprintln!(
+                log_info!(
                     "{}Ctrl+Break received, shutting down gracefully...",
                     EOL
                 );
@@ -137,7 +153,7 @@ async fn main() -> Result<()> {
                         {
                             Ok(permit) => permit,
                             Err(_) => {
-                                eprintln!(
+                                log_warn!(
                                     "[LIMIT] Refusing {}: {} connections already active",
                                     client_addr,
                                     MAX_CONCURRENT_CONNECTIONS
@@ -146,6 +162,13 @@ async fn main() -> Result<()> {
                                 continue;
                             }
                         };
+                        let active = MAX_CONCURRENT_CONNECTIONS
+                            - connection_limit.available_permits();
+                        log_debug!(
+                            "[ACCEPT] {} connected (active: {})",
+                            client_addr,
+                            active
+                        );
                         configure_tokio_socket(
                             &socket,
                             SocketConfiguration::CLIENT_INBOUND,
@@ -156,12 +179,12 @@ async fn main() -> Result<()> {
                             // the semaphore reflects active handlers.
                             let _permit = permit;
                             if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port).await {
-                                eprintln!("Client handler error from {}: {:#}", client_addr, e);
+                                log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });
                     }
                     Err(e) => {
-                        eprintln!("Accept error: {}", e);
+                        log_warn!("Accept error: {}", e);
                         // Avoid a hot loop if the listener keeps failing.
                         tokio::time::sleep(Duration::from_millis(100)).await;
                     }
@@ -170,7 +193,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    eprintln!(
+    log_info!(
         "Stopped accepting connections; closing {} active connection(s).",
         connections.len()
     );

@@ -51,7 +51,7 @@ impl Service<Request<Incoming>> for ProxyService {
                 }
             };
             Ok(result.unwrap_or_else(|e| {
-                eprintln!(
+                log_error!(
                     "Request handling error from {}: {:#}",
                     client_addr, e
                 );
@@ -84,6 +84,7 @@ pub async fn handle_client_connection(
     addr: SocketAddr,
     upstream_port: u16,
 ) -> Result<()> {
+    let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
     let service = ProxyService {
         upstream_port,
@@ -103,13 +104,18 @@ pub async fn handle_client_connection(
         .http2()
         .timer(hyper_util::rt::TokioTimer::new())
         .enable_connect_protocol();
-    match builder
+    let result = builder
         .serve_connection_with_upgrades(io, service)
-        .await
-    {
+        .await;
+    log_debug!(
+        "[CLOSE] {} disconnected after {:?}",
+        addr,
+        started.elapsed()
+    );
+    match result {
         Ok(()) => Ok(()),
         Err(e) => {
-            eprintln!("Connection {} error: {}", addr, e);
+            log_warn!("Connection {} error: {}", addr, e);
             Ok(())
         }
     }

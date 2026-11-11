@@ -1,5 +1,5 @@
 use http::{Request, Response};
-use hyper::body::Incoming;
+use hyper::body::{Body, Incoming};
 
 use crate::http::{
     self, build_forward_request, extract_target, BoxBody,
@@ -16,15 +16,22 @@ pub(crate) async fn handle_h2_request(
     upstream_port: u16,
     client_addr: std::net::SocketAddr,
 ) -> anyhow::Result<Response<BoxBody>> {
+    let started = std::time::Instant::now();
     let method = req.method().clone();
     let uri = req.uri().clone();
+    let header_count = req.headers().len();
     let target = extract_target(&req)?;
     let (host, port) = (target.host, target.port);
-    eprintln!(
+    log_info!(
         "[HTTP/2] {} {} (host: {}:{}) from {}",
         method, uri, host, port, client_addr
     );
-    match method.as_str() {
+    log_debug!(
+        "[HTTP/2] {} header(s), body size hint: {:?}",
+        header_count,
+        req.body().size_hint()
+    );
+    let response = match method.as_str() {
         "CONNECT" => {
             crate::tunnel::connect_through_socks5(
                 req,
@@ -39,7 +46,24 @@ pub(crate) async fn handle_h2_request(
             handle_http_request(req, &host, port, upstream_port)
                 .await
         }
+    };
+    match &response {
+        Ok(response) => log_debug!(
+            "[HTTP/2] {} {} -> {} in {:?}",
+            method,
+            uri,
+            response.status(),
+            started.elapsed()
+        ),
+        Err(error) => log_debug!(
+            "[HTTP/2] {} {} failed in {:?}: {:#}",
+            method,
+            uri,
+            started.elapsed(),
+            error
+        ),
     }
+    response
 }
 
 async fn handle_http_request(

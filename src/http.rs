@@ -141,6 +141,7 @@ pub fn build_forward_request(
             continue;
         }
         if is_hop_by_hop(name, &connection_tokens) {
+            log_trace!("[HTTP] Dropping hop-by-hop header: {}", name);
             continue;
         }
         forward_req = forward_req.header(name, value);
@@ -204,6 +205,13 @@ pub async fn send_http_request(
     forward_req: Request<Incoming>,
     method: &http::Method,
 ) -> Result<Response<BoxBody>> {
+    let started = std::time::Instant::now();
+    log_debug!(
+        "[UPSTREAM] {} {} ({} header(s))",
+        forward_req.method(),
+        forward_req.uri(),
+        forward_req.headers().len()
+    );
     let io = hyper_util::rt::TokioIo::new(upstream_stream);
     let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
         .handshake(io)
@@ -211,7 +219,7 @@ pub async fn send_http_request(
         .context("Failed to establish HTTP/1.1 connection through SOCKS5")?;
     tokio::spawn(async move {
         if let Err(e) = conn.await {
-            eprintln!("Upstream HTTP/1.1 connection error: {}", e);
+            log_warn!("Upstream HTTP/1.1 connection error: {}", e);
         }
     });
     let response = sender
@@ -219,6 +227,12 @@ pub async fn send_http_request(
         .await
         .context("Failed to send HTTP/1.1 request through SOCKS5")?;
     let (parts, body) = response.into_parts();
+    log_debug!(
+        "[UPSTREAM] -> {} in {:?} ({} response header(s))",
+        parts.status,
+        started.elapsed(),
+        parts.headers.len()
+    );
     let connection_tokens =
         connection_header_tokens(&parts.headers);
     let mut response_builder =

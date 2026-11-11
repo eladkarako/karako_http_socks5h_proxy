@@ -80,6 +80,12 @@ pub fn configure_listener_socket(listener: &TcpListener) {
         "SO_SNDBUF",
         socket_ref.set_send_buffer_size(config.send_buffer),
     );
+    log_debug!(
+        "[SOCKET] [{}] Listener buffers: recv={}KB send={}KB",
+        config.name,
+        config.recv_buffer / 1024,
+        config.send_buffer / 1024
+    );
 }
 
 /// Applies best-effort socket tuning. None of these options is required
@@ -127,6 +133,15 @@ pub fn configure_tokio_socket(
                 .with_retries(config.keepalive_retries),
         ),
     );
+    log_debug!(
+        "[SOCKET] [{}] recv={}KB send={}KB | keepalive idle={}s interval={}s retries={}",
+        config.name,
+        config.recv_buffer / 1024,
+        config.send_buffer / 1024,
+        config.keepalive_idle.as_secs(),
+        config.keepalive_interval.as_secs(),
+        config.keepalive_retries
+    );
 }
 
 fn report<T>(
@@ -135,7 +150,7 @@ fn report<T>(
     result: std::io::Result<T>,
 ) {
     if let Err(error) = result {
-        eprintln!(
+        log_warn!(
             "[SOCKET] [{}] Failed to set {}: {}",
             socket_name, option, error
         );

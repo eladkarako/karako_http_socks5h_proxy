@@ -33,7 +33,8 @@ pub async fn connect_through_socks5(
     upstream_port: u16,
     over_http2: bool,
 ) -> Result<Response<BoxBody>> {
-    eprintln!(
+    let started = std::time::Instant::now();
+    log_info!(
         "[CONNECT TUNNEL] Initiating tunnel to {}:{}",
         host, port
     );
@@ -50,8 +51,9 @@ pub async fn connect_through_socks5(
         &target_stream_clone,
         SocketConfiguration::SOCKS_TUNNEL,
     );
-    eprintln!(
-        "[CONNECT TUNNEL] SOCKS5 connection established, sending 200 OK"
+    log_debug!(
+        "[CONNECT TUNNEL] SOCKS5 connection established in {:?}, sending 200 OK",
+        started.elapsed()
     );
     let mut response_builder =
         Response::builder().status(StatusCode::OK);
@@ -67,7 +69,7 @@ pub async fn connect_through_socks5(
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
-                eprintln!(
+                log_debug!(
                     "[CONNECT TUNNEL] Upgrade successful for {}:{}",
                     host, port
                 );
@@ -79,14 +81,14 @@ pub async fn connect_through_socks5(
                 )
                     .await
                 {
-                    eprintln!(
+                    log_error!(
                         "[CONNECT TUNNEL] Tunnel error for {}:{}: {:#}",
                         host, port, e
                     );
                 }
             }
             Err(e) => {
-                eprintln!(
+                log_warn!(
                     "[CONNECT TUNNEL] Upgrade failed for {}:{}: {}",
                     host, port, e
                 );
@@ -102,7 +104,8 @@ pub async fn handle_tunnel(
     host: &str,
     port: u16,
 ) -> Result<()> {
-    eprintln!(
+    let started = std::time::Instant::now();
+    log_debug!(
         "[TUNNEL] Starting bidirectional tunnel for {}:{}",
         host, port
     );
@@ -128,9 +131,9 @@ pub async fn handle_tunnel(
             host, port, TUNNEL_IDLE_TIMEOUT
         )
     })?;
-    eprintln!(
-        "[TUNNEL] Tunnel {}:{} closed normally: client→target: {} bytes, target→client: {} bytes",
-        host, port, client_to_target, target_to_client
+    log_info!(
+        "[TUNNEL] Tunnel {}:{} closed normally after {:?}: client→target: {} bytes, target→client: {} bytes",
+        host, port, started.elapsed(), client_to_target, target_to_client
     );
     Ok(())
 }

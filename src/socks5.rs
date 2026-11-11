@@ -32,6 +32,7 @@ const SOCKS5_ERRORS: &[&str] = &[
 pub async fn connect_to_socks5_server(
     upstream_port: u16
 ) -> Result<TcpStream> {
+    let started = std::time::Instant::now();
     let addr = format!("127.0.0.1:{}", upstream_port);
     let stream =
         timeout(SOCKS5_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr))
@@ -53,6 +54,11 @@ pub async fn connect_to_socks5_server(
         &stream,
         SocketConfiguration::SOCKS_HANDSHAKE,
     );
+    log_debug!(
+        "[SOCKS5] Connected to {} in {:?}",
+        addr,
+        started.elapsed()
+    );
     Ok(stream)
 }
 
@@ -61,6 +67,7 @@ pub async fn establish_socks5_connection(
     host: &str,
     port: u16,
 ) -> Result<()> {
+    let started = std::time::Instant::now();
     timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
         perform_socks5_handshake(stream, host, port),
@@ -72,7 +79,12 @@ pub async fn establish_socks5_connection(
             SOCKS5_HANDSHAKE_TIMEOUT, host, port
         )
     })??;
-    eprintln!("[SOCKS5] Handshake complete for {}:{}", host, port);
+    log_info!(
+        "[SOCKS5] Handshake complete for {}:{} in {:?}",
+        host,
+        port,
+        started.elapsed()
+    );
     Ok(())
 }
 
@@ -97,6 +109,11 @@ async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
         .flush()
         .await
         .context("Failed to flush SOCKS5 greeting")?;
+    log_trace!(
+        "[SOCKS5] Greeting out ({} bytes):\n{}",
+        greeting.len(),
+        crate::logging::hex_dump(&greeting)
+    );
     Ok(())
 }
 
@@ -108,6 +125,11 @@ async fn receive_socks5_greeting_response(
         .read_exact(&mut resp)
         .await
         .context("Failed to read SOCKS5 greeting response")?;
+    log_trace!(
+        "[SOCKS5] Greeting in ({} bytes):\n{}",
+        resp.len(),
+        crate::logging::hex_dump(&resp)
+    );
     ensure!(
         resp[0] == SOCKS5_VERSION,
         "Invalid SOCKS5 version: {} (expected {})",
@@ -190,6 +212,18 @@ async fn send_socks5_connect_request(
         }
     }
     connect_req.extend_from_slice(&port.to_be_bytes());
+    log_debug!(
+        "[SOCKS5] CONNECT {}:{} (atyp=0x{:02X}, {} bytes)",
+        host,
+        port,
+        atyp,
+        connect_req.len()
+    );
+    log_trace!(
+        "[SOCKS5] CONNECT out ({} bytes):\n{}",
+        connect_req.len(),
+        crate::logging::hex_dump(&connect_req)
+    );
     stream
         .write_all(&connect_req)
         .await
@@ -208,6 +242,18 @@ async fn receive_socks5_connect_response(
         .read_exact(&mut resp_header)
         .await
         .context("Failed to read SOCKS5 CONNECT response")?;
+    log_debug!(
+        "[SOCKS5] CONNECT response: ver={}, rep={}, rsv={}, atyp={}",
+        resp_header[0],
+        resp_header[1],
+        resp_header[2],
+        resp_header[3]
+    );
+    log_trace!(
+        "[SOCKS5] CONNECT response header ({} bytes):\n{}",
+        resp_header.len(),
+        crate::logging::hex_dump(&resp_header)
+    );
     ensure!(
         resp_header[0] == SOCKS5_VERSION,
         "Invalid SOCKS5 version in response: {} (expected {})",
@@ -275,5 +321,9 @@ async fn read_socks5_bind_address(
             );
         }
     }
+    log_trace!(
+        "[SOCKS5] Bind address consumed (atyp=0x{:02X})",
+        atyp
+    );
     Ok(())
 }
