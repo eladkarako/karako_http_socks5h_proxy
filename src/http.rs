@@ -103,14 +103,21 @@ pub fn build_forward_request(
     let forward_url =
         format!("http://{}:{}{}", host, port, path_query);
     let (parts, body) = req.into_parts();
+    let connection_tokens =
+        connection_header_tokens(&parts.headers);
     let mut forward_req = Request::builder()
         .method(method.clone())
         .uri(forward_url)
         .version(hyper::Version::HTTP_11);
     for (name, value) in parts.headers.iter() {
-        if should_forward_header(name.as_str()) {
-            forward_req = forward_req.header(name, value);
+        let name = name.as_str();
+        if name == "host" || name == "content-length" {
+            continue;
         }
+        if is_hop_by_hop(name, &connection_tokens) {
+            continue;
+        }
+        forward_req = forward_req.header(name, value);
     }
     forward_req = forward_req.header(
         http::header::HOST,
@@ -121,44 +128,49 @@ pub fn build_forward_request(
         .context("Failed to build forward request")
 }
 
-pub fn should_forward_response_header(
-    name: &str,
-    method: &http::Method,
-) -> bool {
-    let name_lower = name.to_lowercase();
-    if matches!(
-        name_lower.as_str(),
-        "host"
-            | "connection"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-            | "proxy-connection"
-            | "keep-alive"
-    ) {
-        return false;
-    }
-    if name_lower == "content-length" && method.as_str() != "HEAD" {
-        return false;
-    }
-    true
+/// Headers that only apply to a single transport hop and must not be
+/// forwarded by a proxy (RFC 9110 section 7.6.1).
+const HOP_BY_HOP_HEADERS: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-connection",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
+
+/// Header names listed in the `Connection` header are hop-by-hop as
+/// well, even if they are not in the standard list above.
+fn connection_header_tokens(
+    headers: &http::HeaderMap,
+) -> Vec<String> {
+    headers
+        .get_all(http::header::CONNECTION)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .map(|token| token.trim().to_ascii_lowercase())
+        .filter(|token| !token.is_empty())
+        .collect()
 }
 
-pub fn should_forward_header(name: &str) -> bool {
-    let name_lower = name.to_lowercase();
-    !matches!(
-        name_lower.as_str(),
-        "host"
-            | "connection"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-            | "proxy-connection"
-            | "keep-alive"
-            | "content-length"
-    )
+fn is_hop_by_hop(name: &str, connection_tokens: &[String]) -> bool {
+    HOP_BY_HOP_HEADERS.contains(&name)
+        || connection_tokens.iter().any(|token| token == name)
+}
+
+fn should_forward_response_header(
+    name: &str,
+    method: &http::Method,
+    connection_tokens: &[String],
+) -> bool {
+    if is_hop_by_hop(name, connection_tokens) {
+        return false;
+    }
+    !(name == "content-length" && method != http::Method::HEAD)
 }
 
 pub async fn send_http_request(
@@ -181,10 +193,16 @@ pub async fn send_http_request(
         .await
         .context("Failed to send HTTP/1.1 request through SOCKS5")?;
     let (parts, body) = response.into_parts();
+    let connection_tokens =
+        connection_header_tokens(&parts.headers);
     let mut response_builder =
         Response::builder().status(parts.status);
     for (name, value) in parts.headers.iter() {
-        if should_forward_response_header(name.as_str(), method) {
+        if should_forward_response_header(
+            name.as_str(),
+            method,
+            &connection_tokens,
+        ) {
             response_builder = response_builder.header(name, value);
         }
     }
