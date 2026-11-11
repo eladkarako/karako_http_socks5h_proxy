@@ -52,6 +52,6 @@ debug = false                                                       # Removes de
 incremental = false                                                 # Disable incremental compilation for cleaner builds, prevents stale build artifacts in release mode.
 lto = true                                                          # Link-time optimization across compilation units, for better performances.
 opt-level = 3                                                       # prioritizes speed (loop unrolling, better branch prediction, instruction cache fit) over binary size. use value "z" (instead of 3) for optimizing size.
-panic = "abort"                                                     # Replace unwinding with abort (smaller binary, faster panics).
+panic = "unwind"                                                    # Keep unwinding so a panic in one connection task is contained and reported instead of taking down the whole proxy.
 rpath = false                                                       # Do not embed runtime library search paths which prevents runtime path issues, needed for static builds.
 strip = true                                                        # Removes all symbols from final binary minimizes its size.

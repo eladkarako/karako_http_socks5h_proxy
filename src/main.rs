@@ -147,7 +147,11 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             _ = shutdown.notified() => break,
-            Some(_) = connections.join_next(), if !connections.is_empty() => {}
+            Some(result) = connections.join_next(), if !connections.is_empty() => {
+                if let Err(error) = result {
+                    log_error!("Connection task terminated unexpectedly: {}", error);
+                }
+            }
             result = listener.accept() => {
                 match result {
                     Ok((socket, client_addr)) => {
@@ -208,7 +212,13 @@ async fn main() -> Result<()> {
     // instead of cutting them mid-stream.
     let drained = tokio::time::timeout(SHUTDOWN_GRACE_PERIOD, async {
         let mut drained = 0usize;
-        while connections.join_next().await.is_some() {
+        while let Some(result) = connections.join_next().await {
+            if let Err(error) = result {
+                log_error!(
+                    "Connection task terminated unexpectedly during shutdown: {}",
+                    error
+                );
+            }
             drained += 1;
         }
         drained
