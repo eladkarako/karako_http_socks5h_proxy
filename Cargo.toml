@@ -56,3 +56,7 @@ opt-level = 3                                                       # prioritize
 panic = "unwind"                                                    # Keep unwinding so a panic in one connection task is contained and reported instead of taking down the whole proxy.
 rpath = false                                                       # Do not embed runtime library search paths which prevents runtime path issues, needed for static builds.
 strip = true                                                        # Removes all symbols from final binary minimizes its size.
+
+[profile.release-size]
+inherits = "release"
+opt-level = "z"                                                     # Optimize for binary size instead of speed; opt into it with `cargo build --profile release-size`.
