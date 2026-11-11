@@ -27,11 +27,17 @@ mod http2_service;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
+
+/// Upper bound on simultaneously handled client connections.
+const MAX_CONCURRENT_CONNECTIONS: usize = 1024;
 
 #[cfg(target_os = "windows")]
 const EOL: &str = "\r\n";
@@ -73,7 +79,7 @@ async fn main() -> Result<()> {
             "{}Ctrl+C received, shutting down gracefully...",
             EOL
         );
-        shutdown_clone.notify_waiters();
+        shutdown_clone.notify_one();
     });
 
     #[cfg(unix)]
@@ -89,7 +95,7 @@ async fn main() -> Result<()> {
                 "{}SIGTERM received, shutting down gracefully...",
                 EOL
             );
-            shutdown_clone.notify_waiters();
+            shutdown_clone.notify_one();
             Ok::<(), anyhow::Error>(())
         });
     }
@@ -106,22 +112,46 @@ async fn main() -> Result<()> {
                     "{}Ctrl+Break received, shutting down gracefully...",
                     EOL
                 );
-                shutdown_clone.notify_waiters();
+                shutdown_clone.notify_one();
             }
         });
     }
 
+    let connection_limit = Arc::new(Semaphore::new(
+        MAX_CONCURRENT_CONNECTIONS,
+    ));
+    let mut connections = JoinSet::new();
+
     loop {
         tokio::select! {
             _ = shutdown.notified() => break,
+            Some(_) = connections.join_next(), if !connections.is_empty() => {}
             result = listener.accept() => {
                 match result {
                     Ok((socket, client_addr)) => {
+                        let permit = match connection_limit
+                            .clone()
+                            .try_acquire_owned()
+                        {
+                            Ok(permit) => permit,
+                            Err(_) => {
+                                eprintln!(
+                                    "[LIMIT] Refusing {}: {} connections already active",
+                                    client_addr,
+                                    MAX_CONCURRENT_CONNECTIONS
+                                );
+                                drop(socket);
+                                continue;
+                            }
+                        };
                         if let Err(e) = configure_tokio_socket(&socket, SocketConfiguration::CLIENT_INBOUND) {
                             eprintln!("[SOCKET] Failed to configure inbound client socket: {:#}", e);
                         }
                         let upstream_port = args.upstream_port;
-                        tokio::spawn(async move {
+                        connections.spawn(async move {
+                            // Held for the lifetime of the connection so
+                            // the semaphore reflects active handlers.
+                            let _permit = permit;
                             if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port).await {
                                 eprintln!("Client handler error from {}: {:#}", client_addr, e);
                             }
@@ -129,12 +159,18 @@ async fn main() -> Result<()> {
                     }
                     Err(e) => {
                         eprintln!("Accept error: {}", e);
+                        // Avoid a hot loop if the listener keeps failing.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
                     }
                 }
             }
         }
     }
 
-    eprintln!("Stopped accepting connections.");
+    eprintln!(
+        "Stopped accepting connections; closing {} active connection(s).",
+        connections.len()
+    );
+    connections.shutdown().await;
     Ok(())
 }
