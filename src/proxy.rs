@@ -15,6 +15,18 @@ use crate::http2_service::handle_h2_request;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Upper bound on concurrently multiplexed HTTP/2 streams per client
+/// connection. Each stream opens its own upstream SOCKS5 socket, so this
+/// keeps a single connection from exhausting upstream resources.
+const H2_MAX_CONCURRENT_STREAMS: u32 = 128;
+
+/// PING interval used to detect dead HTTP/2 peers.
+const H2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How long to wait for a PING acknowledgement before closing the
+/// connection.
+const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
+
 #[derive(Clone, Copy)]
 struct ProxyService {
     upstream_port: u16,
@@ -103,7 +115,10 @@ pub async fn handle_client_connection(
     builder
         .http2()
         .timer(hyper_util::rt::TokioTimer::new())
-        .enable_connect_protocol();
+        .enable_connect_protocol()
+        .max_concurrent_streams(H2_MAX_CONCURRENT_STREAMS)
+        .keep_alive_interval(H2_KEEP_ALIVE_INTERVAL)
+        .keep_alive_timeout(H2_KEEP_ALIVE_TIMEOUT);
     let result = builder
         .serve_connection_with_upgrades(io, service)
         .await;
