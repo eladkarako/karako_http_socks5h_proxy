@@ -43,6 +43,10 @@ use crate::socket_config::{
 /// Upper bound on simultaneously handled client connections.
 const MAX_CONCURRENT_CONNECTIONS: usize = 1024;
 
+/// How long in-flight connections may take to finish after a shutdown
+/// signal before they are aborted.
+const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(8);
+
 #[cfg(target_os = "windows")]
 const EOL: &str = "\r\n";
 
@@ -193,10 +197,38 @@ async fn main() -> Result<()> {
         }
     }
 
+    let active = connections.len();
     log_info!(
-        "Stopped accepting connections; closing {} active connection(s).",
-        connections.len()
+        "Stopped accepting connections; draining {} active connection(s) (up to {}s).",
+        active,
+        SHUTDOWN_GRACE_PERIOD.as_secs()
     );
-    connections.shutdown().await;
+
+    // Give in-flight requests and tunnels a bounded chance to finish
+    // instead of cutting them mid-stream.
+    let drained = tokio::time::timeout(SHUTDOWN_GRACE_PERIOD, async {
+        let mut drained = 0usize;
+        while connections.join_next().await.is_some() {
+            drained += 1;
+        }
+        drained
+    })
+    .await;
+
+    match drained {
+        Ok(count) => log_info!(
+            "Drained {} connection(s) cleanly.",
+            count
+        ),
+        Err(_) => {
+            let remaining = connections.len();
+            log_warn!(
+                "Grace period elapsed with {} connection(s) still active; aborting them.",
+                remaining
+            );
+            connections.shutdown().await;
+        }
+    }
+
     Ok(())
 }

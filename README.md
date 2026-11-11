@@ -36,8 +36,30 @@ by design limitations: hostname is hard-coded by design to be `127.0.0.1`. both 
 
 binaries provided, supports many OS and architectures.
 
+
+<hr/>
+
 logging: by default the proxy writes one line per request and for each CONNECT tunnel.  
 add `-v` for handshake, socket and timing details, `-vv` to also dump the raw SOCKS5 packets, or `-q` to only log errors.  
+
+| Flag          | Level    | What you see                                                                                                              |
+|---------------|----------|---------------------------------------------------------------------------------------------------------------------------|
+| (default)     | `info`   | startup, one line per request, CONNECT handshake/tunnel summary, bytes transferred.                                       |
+| `-v`          | `debug`  | socket tuning, upstream connect/handshake times, CONNECT packet metadata, response status + elapsed, accept/close events. |
+| `-vv`         | `trace`  | everything above plus raw SOCKS5 packet hex dumps (greeting, CONNECT, bind address).                                      |
+| `-q`          | `error`  | only failures.                                                                                                            |
+
+sample `-vv`
+
+```
+[SOCKS5] CONNECT example.com:443 (atyp=0x03, 18 bytes)
+[SOCKS5] CONNECT out (18 bytes):
+05 01 00 03 0B 65 78 61 6D 70 6C 65 2E 63 6F 6D
+01 BB
+[UPSTREAM] -> 200 OK in 647ms (12 response header(s))
+[HTTP/1.1] GET http://example.com/ -> 200 OK in 2.48s
+[TUNNEL] Tunnel example.com:443 closed normally after 707ms: client→target: 1893 bytes, target→client: 6006 bytes
+```
 
 </details>
 
