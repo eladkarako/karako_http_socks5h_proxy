@@ -15,13 +15,13 @@ version = "26.11.11"
 
 [dependencies]
 anyhow = { version = "1.0.104" }
-bytes = { version = "1.12.1", features = ["extra-platforms"] }
+bytes = { version = "1.12.1" }
 clap = { version = "4.6.7", features = ["derive", "wrap_help", "usage", "cargo", "suggestions", "help", "color"] }
 http = { version = "1.5.0" }
 http-body-util = { version = "0.1.5" }
-hyper = { version = "1.12.0", features = ["full", "http2", "http1", "client"] }
+hyper = { version = "1.12.0", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1.21", features = ["tokio", "server-auto"] }
-tokio = { version = "1.54.1", features = ["full"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
 socket2 = { version = "0.6.5", features = ["all"] }
 
 #h2 = { version = "0.4.20", features = ["stream"] }
