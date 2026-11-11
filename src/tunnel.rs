@@ -30,7 +30,7 @@ pub async fn connect_through_socks5(
     req: Request<Incoming>,
     host: String,
     port: u16,
-    upstream_port: u16,
+    upstream_addr: std::net::SocketAddr,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     log_info!(
@@ -38,7 +38,7 @@ pub async fn connect_through_socks5(
         host, port
     );
     let target_stream =
-        connect_to_socks5_server(upstream_port).await?;
+        connect_to_socks5_server(upstream_addr).await?;
     let mut target_stream_clone = target_stream;
     establish_socks5_connection(
         &mut target_stream_clone,

@@ -30,10 +30,10 @@ const SOCKS5_ERRORS: &[&str] = &[
 ];
 
 pub async fn connect_to_socks5_server(
-    upstream_port: u16
+    upstream_addr: std::net::SocketAddr
 ) -> Result<TcpStream> {
     let started = std::time::Instant::now();
-    let addr = format!("127.0.0.1:{}", upstream_port);
+    let addr = upstream_addr;
     let stream =
         timeout(SOCKS5_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr))
             .await

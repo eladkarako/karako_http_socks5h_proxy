@@ -8,7 +8,7 @@ use crate::upstream::UpstreamClient;
 
 pub(crate) async fn handle_h2_request(
     req: Request<Incoming>,
-    upstream_port: u16,
+    upstream_addr: std::net::SocketAddr,
     client_addr: std::net::SocketAddr,
     client: UpstreamClient,
 ) -> anyhow::Result<Response<BoxBody>> {
@@ -33,7 +33,7 @@ pub(crate) async fn handle_h2_request(
                 req,
                 host,
                 port,
-                upstream_port,
+                upstream_addr,
             )
                 .await
         }

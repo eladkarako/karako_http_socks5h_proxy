@@ -62,27 +62,28 @@ async fn main() -> Result<()> {
     let args = args::parse_and_validate()?;
     logging::init(args.quiet, args.verbose);
 
-    let addr: std::net::SocketAddr =
-        format!("127.0.0.1:{}", args.http_port)
-            .parse()
-            .context("Failed to parse listen address")?;
+    let addr = std::net::SocketAddr::new(
+        args.bind,
+        args.http_port,
+    );
+    let upstream_addr = std::net::SocketAddr::new(
+        args.upstream_host,
+        args.upstream_port,
+    );
 
     let listener =
-        TcpListener::bind(&addr).await.with_context(|| {
-            format!(
-                "Failed to bind HTTP listener on 127.0.0.1:{}",
-                args.http_port
-            )
+        TcpListener::bind(addr).await.with_context(|| {
+            format!("Failed to bind HTTP listener on {}", addr)
         })?;
     configure_listener_socket(&listener);
 
     log_info!(
-        "HTTP/1.1 + HTTP/2 proxy listening on 127.0.0.1:{}",
-        args.http_port
+        "HTTP/1.1 + HTTP/2 proxy listening on {}",
+        addr
     );
     log_info!(
-        "Forwarding to upstream SOCKS5h on 127.0.0.1:{}",
-        args.upstream_port
+        "Forwarding to upstream SOCKS5h on {}",
+        upstream_addr
     );
     log_debug!(
         "[LOG] Level is {} (use -v for handshake details, -vv for packet dumps)",
@@ -147,7 +148,7 @@ async fn main() -> Result<()> {
         MAX_CONCURRENT_CONNECTIONS,
     ));
     let mut connections = JoinSet::new();
-    let upstream_client = upstream::build(args.upstream_port);
+    let upstream_client = upstream::build(upstream_addr);
 
     loop {
         tokio::select! {
@@ -186,13 +187,12 @@ async fn main() -> Result<()> {
                             &socket,
                             SocketConfiguration::CLIENT_INBOUND,
                         );
-                        let upstream_port = args.upstream_port;
                         let client = upstream_client.clone();
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port, client).await {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });

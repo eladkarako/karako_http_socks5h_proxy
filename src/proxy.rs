@@ -30,7 +30,7 @@ const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Clone)]
 struct ProxyService {
-    upstream_port: u16,
+    upstream_addr: SocketAddr,
     client_addr: SocketAddr,
     client: UpstreamClient,
 }
@@ -47,7 +47,7 @@ impl Service<Request<Incoming>> for ProxyService {
     >;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
-        let upstream_port = self.upstream_port;
+        let upstream_addr = self.upstream_addr;
         let client_addr = self.client_addr;
         let client = self.client.clone();
         Box::pin(async move {
@@ -55,7 +55,7 @@ impl Service<Request<Incoming>> for ProxyService {
                 hyper::Version::HTTP_2 => {
                     handle_h2_request(
                         req,
-                        upstream_port,
+                        upstream_addr,
                         client_addr,
                         client,
                     )
@@ -64,7 +64,7 @@ impl Service<Request<Incoming>> for ProxyService {
                 _ => {
                     handle_http1_request(
                         req,
-                        upstream_port,
+                        upstream_addr,
                         client_addr,
                         client,
                     )
@@ -103,13 +103,13 @@ fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
 pub async fn handle_client_connection(
     socket: TcpStream,
     addr: SocketAddr,
-    upstream_port: u16,
+    upstream_addr: SocketAddr,
     client: UpstreamClient,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
     let service = ProxyService {
-        upstream_port,
+        upstream_addr,
         client_addr: addr,
         client,
     };

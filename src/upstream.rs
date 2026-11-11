@@ -30,7 +30,7 @@ pub(crate) type UpstreamClient = Client<SocksConnector, Incoming>;
 
 /// Builds the shared upstream client. Cloning the returned value shares
 /// the same connection pool.
-pub(crate) fn build(upstream_port: u16) -> UpstreamClient {
+pub(crate) fn build(upstream_addr: std::net::SocketAddr) -> UpstreamClient {
     let mut builder = Client::builder(
         hyper_util::rt::TokioExecutor::new(),
     );
@@ -38,7 +38,7 @@ pub(crate) fn build(upstream_port: u16) -> UpstreamClient {
         .pool_idle_timeout(POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
         .retry_canceled_requests(true)
-        .build(SocksConnector { upstream_port })
+        .build(SocksConnector { upstream_addr })
 }
 
 /// Connects to a destination URI by opening a fresh SOCKS5h tunnel.
@@ -47,7 +47,7 @@ pub(crate) fn build(upstream_port: u16) -> UpstreamClient {
 /// connection for the requested `host:port`.
 #[derive(Clone)]
 pub(crate) struct SocksConnector {
-    upstream_port: u16,
+    upstream_addr: std::net::SocketAddr,
 }
 
 impl Service<Uri> for SocksConnector {
@@ -68,7 +68,7 @@ impl Service<Uri> for SocksConnector {
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        let upstream_port = self.upstream_port;
+        let upstream_addr = self.upstream_addr;
         Box::pin(async move {
             let host = uri
                 .host()
@@ -78,7 +78,7 @@ impl Service<Uri> for SocksConnector {
                 .port_u16()
                 .unwrap_or_else(|| default_port(&uri));
             let mut stream =
-                connect_to_socks5_server(upstream_port).await?;
+                connect_to_socks5_server(upstream_addr).await?;
             establish_socks5_connection(&mut stream, &host, port)
                 .await?;
             configure_tokio_socket(
