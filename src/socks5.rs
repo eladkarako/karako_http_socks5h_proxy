@@ -11,7 +11,9 @@ use crate::socket_config::{
 const SOCKS5_VERSION: u8 = 5;
 const SOCKS5_CMD_CONNECT: u8 = 1;
 const SOCKS5_AUTH_METHOD_NONE: u8 = 0;
+const SOCKS5_AUTH_METHOD_USER_PASS: u8 = 0x02;
 const SOCKS5_AUTH_METHOD_UNACCEPTABLE: u8 = 0xFF;
+const SOCKS5_AUTH_VERSION: u8 = 0x01;
 const SOCKS5_ATYP_DOMAIN: u8 = 3;
 const SOCKS5_ATYP_IPV4: u8 = 1;
 const SOCKS5_ATYP_IPV6: u8 = 4;
@@ -28,6 +30,31 @@ const SOCKS5_ERRORS: &[&str] = &[
     "Command not supported",
     "Address type not supported",
 ];
+
+/// Optional RFC 1929 username/password credentials for the upstream
+/// SOCKS5 server.
+#[derive(Clone, Default)]
+pub struct Socks5Auth {
+    credentials: Option<(String, String)>,
+}
+
+impl Socks5Auth {
+    /// Builds credentials from the CLI options. Both values must be
+    /// present (the argument parser enforces that) or neither is used.
+    pub fn new(
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Self {
+        match (username, password) {
+            (Some(username), Some(password)) => Self {
+                credentials: Some((username, password)),
+            },
+            _ => Self {
+                credentials: None,
+            },
+        }
+    }
+}
 
 pub async fn connect_to_socks5_server(
     upstream_addr: std::net::SocketAddr
@@ -66,11 +93,12 @@ pub async fn establish_socks5_connection(
     stream: &mut TcpStream,
     host: &str,
     port: u16,
+    auth: &Socks5Auth,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
-        perform_socks5_handshake(stream, host, port),
+        perform_socks5_handshake(stream, host, port, auth),
     )
     .await
     .with_context(|| {
@@ -92,15 +120,39 @@ async fn perform_socks5_handshake(
     stream: &mut TcpStream,
     host: &str,
     port: u16,
+    auth: &Socks5Auth,
 ) -> Result<()> {
-    send_socks5_greeting(stream).await?;
-    receive_socks5_greeting_response(stream).await?;
+    send_socks5_greeting(stream, auth).await?;
+    let method =
+        receive_socks5_greeting_response(stream).await?;
+    match method {
+        SOCKS5_AUTH_METHOD_NONE => {}
+        SOCKS5_AUTH_METHOD_USER_PASS => {
+            perform_user_pass_auth(stream, auth).await?;
+        }
+        other => bail!(
+            "SOCKS5 server selected unsupported authentication \
+             method 0x{:02X}",
+            other
+        ),
+    }
     send_socks5_connect_request(stream, host, port).await?;
     receive_socks5_connect_response(stream).await
 }
 
-async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
-    let greeting = [SOCKS5_VERSION, 1, SOCKS5_AUTH_METHOD_NONE];
+async fn send_socks5_greeting(
+    stream: &mut TcpStream,
+    auth: &Socks5Auth,
+) -> Result<()> {
+    let methods: &[u8] = if auth.credentials.is_some() {
+        &[SOCKS5_AUTH_METHOD_NONE, SOCKS5_AUTH_METHOD_USER_PASS]
+    } else {
+        &[SOCKS5_AUTH_METHOD_NONE]
+    };
+    let mut greeting = Vec::with_capacity(2 + methods.len());
+    greeting.push(SOCKS5_VERSION);
+    greeting.push(methods.len() as u8);
+    greeting.extend_from_slice(methods);
     stream
         .write_all(&greeting)
         .await
@@ -119,7 +171,7 @@ async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
 
 async fn receive_socks5_greeting_response(
     stream: &mut TcpStream
-) -> Result<()> {
+) -> Result<u8> {
     let mut resp = [0u8; 2];
     stream
         .read_exact(&mut resp)
@@ -140,12 +192,69 @@ async fn receive_socks5_greeting_response(
         resp[1] != SOCKS5_AUTH_METHOD_UNACCEPTABLE,
         "SOCKS5 server rejected all offered authentication methods"
     );
+    Ok(resp[1])
+}
+
+async fn perform_user_pass_auth(
+    stream: &mut TcpStream,
+    auth: &Socks5Auth,
+) -> Result<()> {
+    let Some((username, password)) = auth.credentials.as_ref()
+    else {
+        bail!(
+            "SOCKS5 server requires username/password \
+             authentication, but no credentials were configured"
+        );
+    };
     ensure!(
-        resp[1] == SOCKS5_AUTH_METHOD_NONE,
-        "SOCKS5 server selected unsupported authentication method \
-         0x{:02X} (only no-authentication is supported)",
+        username.len() <= 255,
+        "SOCKS5 username is too long: {} bytes (max 255)",
+        username.len()
+    );
+    ensure!(
+        password.len() <= 255,
+        "SOCKS5 password is too long: {} bytes (max 255)",
+        password.len()
+    );
+    let mut request = Vec::with_capacity(
+        3 + username.len() + password.len(),
+    );
+    request.push(SOCKS5_AUTH_VERSION);
+    request.push(username.len() as u8);
+    request.extend_from_slice(username.as_bytes());
+    request.push(password.len() as u8);
+    request.extend_from_slice(password.as_bytes());
+    stream
+        .write_all(&request)
+        .await
+        .context("Failed to send SOCKS5 username/password auth")?;
+    stream
+        .flush()
+        .await
+        .context("Failed to flush SOCKS5 username/password auth")?;
+    log_debug!(
+        "[SOCKS5] Username/password auth sent (username {} bytes, password {} bytes)",
+        username.len(),
+        password.len()
+    );
+    let mut resp = [0u8; 2];
+    stream
+        .read_exact(&mut resp)
+        .await
+        .context("Failed to read SOCKS5 auth response")?;
+    ensure!(
+        resp[0] == SOCKS5_AUTH_VERSION,
+        "Invalid SOCKS5 auth version in response: {} (expected {})",
+        resp[0],
+        SOCKS5_AUTH_VERSION
+    );
+    ensure!(
+        resp[1] == 0,
+        "SOCKS5 username/password authentication failed \
+         (status 0x{:02X})",
         resp[1]
     );
+    log_debug!("[SOCKS5] Username/password authentication accepted");
     Ok(())
 }
 

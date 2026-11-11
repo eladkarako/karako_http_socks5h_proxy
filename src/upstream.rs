@@ -16,6 +16,7 @@ use crate::socket_config::{
 };
 use crate::socks5::{
     connect_to_socks5_server, establish_socks5_connection,
+    Socks5Auth,
 };
 
 /// How long an idle upstream connection stays in the pool.
@@ -30,7 +31,10 @@ pub(crate) type UpstreamClient = Client<SocksConnector, Incoming>;
 
 /// Builds the shared upstream client. Cloning the returned value shares
 /// the same connection pool.
-pub(crate) fn build(upstream_addr: std::net::SocketAddr) -> UpstreamClient {
+pub(crate) fn build(
+    upstream_addr: std::net::SocketAddr,
+    auth: Socks5Auth,
+) -> UpstreamClient {
     let mut builder = Client::builder(
         hyper_util::rt::TokioExecutor::new(),
     );
@@ -38,7 +42,10 @@ pub(crate) fn build(upstream_addr: std::net::SocketAddr) -> UpstreamClient {
         .pool_idle_timeout(POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(POOL_MAX_IDLE_PER_HOST)
         .retry_canceled_requests(true)
-        .build(SocksConnector { upstream_addr })
+        .build(SocksConnector {
+            upstream_addr,
+            auth,
+        })
 }
 
 /// Connects to a destination URI by opening a fresh SOCKS5h tunnel.
@@ -48,6 +55,7 @@ pub(crate) fn build(upstream_addr: std::net::SocketAddr) -> UpstreamClient {
 #[derive(Clone)]
 pub(crate) struct SocksConnector {
     upstream_addr: std::net::SocketAddr,
+    auth: Socks5Auth,
 }
 
 impl Service<Uri> for SocksConnector {
@@ -69,6 +77,7 @@ impl Service<Uri> for SocksConnector {
 
     fn call(&mut self, uri: Uri) -> Self::Future {
         let upstream_addr = self.upstream_addr;
+        let auth = self.auth.clone();
         Box::pin(async move {
             let host = uri
                 .host()
@@ -79,7 +88,12 @@ impl Service<Uri> for SocksConnector {
                 .unwrap_or_else(|| default_port(&uri));
             let mut stream =
                 connect_to_socks5_server(upstream_addr).await?;
-            establish_socks5_connection(&mut stream, &host, port)
+            establish_socks5_connection(
+                &mut stream,
+                &host,
+                port,
+                &auth,
+            )
                 .await?;
             configure_tokio_socket(
                 &stream,

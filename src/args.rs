@@ -21,6 +21,12 @@ pub struct Args {
     /// Host of the upstream SOCKS5 server
     #[arg(long, default_value = "127.0.0.1")]
     pub upstream_host: IpAddr,
+    /// Username for SOCKS5 username/password authentication
+    #[arg(long, requires = "socks5_password")]
+    pub socks5_username: Option<String>,
+    /// Password for SOCKS5 username/password authentication
+    #[arg(long, requires = "socks5_username")]
+    pub socks5_password: Option<String>,
     /// Increase log verbosity (use twice to dump SOCKS5 packets)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,

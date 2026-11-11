@@ -12,6 +12,8 @@ Options:
   -u, --upstream-port <UPSTREAM_PORT>  [default: 5678]
   -b, --bind <BIND>                    Address to bind the HTTP proxy listener on [default: 127.0.0.1]
       --upstream-host <UPSTREAM_HOST>  Host of the upstream SOCKS5 server [default: 127.0.0.1]
+      --socks5-username <SOCKS5_USERNAME>  Username for SOCKS5 username/password authentication
+      --socks5-password <SOCKS5_PASSWORD>  Password for SOCKS5 username/password authentication
   -v, --verbose...                     Increase log verbosity (use twice to dump SOCKS5 packets)
   -q, --quiet                          Only log errors
   -h, --help                           Print help

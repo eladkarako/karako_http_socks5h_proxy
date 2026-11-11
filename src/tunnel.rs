@@ -15,6 +15,7 @@ use crate::socket_config::{
 };
 use crate::socks5::{
     connect_to_socks5_server, establish_socks5_connection,
+    Socks5Auth,
 };
 
 /// How long a tunnel may sit without any traffic in either direction
@@ -31,6 +32,7 @@ pub async fn connect_through_socks5(
     host: String,
     port: u16,
     upstream_addr: std::net::SocketAddr,
+    auth: Socks5Auth,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     log_info!(
@@ -44,6 +46,7 @@ pub async fn connect_through_socks5(
         &mut target_stream_clone,
         &host,
         port,
+        &auth,
     )
         .await?;
     configure_tokio_socket(

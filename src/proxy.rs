@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 use crate::http::{full_body, BadRequestError, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
+use crate::socks5::Socks5Auth;
 use crate::upstream::UpstreamClient;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -33,6 +34,7 @@ struct ProxyService {
     upstream_addr: SocketAddr,
     client_addr: SocketAddr,
     client: UpstreamClient,
+    auth: Socks5Auth,
 }
 
 impl Service<Request<Incoming>> for ProxyService {
@@ -50,6 +52,7 @@ impl Service<Request<Incoming>> for ProxyService {
         let upstream_addr = self.upstream_addr;
         let client_addr = self.client_addr;
         let client = self.client.clone();
+        let auth = self.auth.clone();
         Box::pin(async move {
             let result = match req.version() {
                 hyper::Version::HTTP_2 => {
@@ -58,6 +61,7 @@ impl Service<Request<Incoming>> for ProxyService {
                         upstream_addr,
                         client_addr,
                         client,
+                        auth,
                     )
                         .await
                 }
@@ -67,6 +71,7 @@ impl Service<Request<Incoming>> for ProxyService {
                         upstream_addr,
                         client_addr,
                         client,
+                        auth,
                     )
                         .await
                 }
@@ -105,6 +110,7 @@ pub async fn handle_client_connection(
     addr: SocketAddr,
     upstream_addr: SocketAddr,
     client: UpstreamClient,
+    auth: Socks5Auth,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
@@ -112,6 +118,7 @@ pub async fn handle_client_connection(
         upstream_addr,
         client_addr: addr,
         client,
+        auth,
     };
     let mut builder =
         hyper_util::server::conn::auto::Builder::new(

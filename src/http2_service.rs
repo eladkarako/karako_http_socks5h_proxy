@@ -4,6 +4,7 @@ use hyper::body::{Body, Incoming};
 use crate::http::{
     self, build_forward_request, extract_target, BoxBody,
 };
+use crate::socks5::Socks5Auth;
 use crate::upstream::UpstreamClient;
 
 pub(crate) async fn handle_h2_request(
@@ -11,6 +12,7 @@ pub(crate) async fn handle_h2_request(
     upstream_addr: std::net::SocketAddr,
     client_addr: std::net::SocketAddr,
     client: UpstreamClient,
+    auth: Socks5Auth,
 ) -> anyhow::Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     let method = req.method().clone();
@@ -34,6 +36,7 @@ pub(crate) async fn handle_h2_request(
                 host,
                 port,
                 upstream_addr,
+                auth,
             )
                 .await
         }

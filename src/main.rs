@@ -61,6 +61,10 @@ const EOL: &str = "\n";
 async fn main() -> Result<()> {
     let args = args::parse_and_validate()?;
     logging::init(args.quiet, args.verbose);
+    let auth = socks5::Socks5Auth::new(
+        args.socks5_username.clone(),
+        args.socks5_password.clone(),
+    );
 
     let addr = std::net::SocketAddr::new(
         args.bind,
@@ -95,6 +99,15 @@ async fn main() -> Result<()> {
                 1 => "debug",
                 _ => "trace",
             }
+        }
+    );
+
+    log_debug!(
+        "[SOCKS5] Username/password authentication {}",
+        if args.socks5_username.is_some() {
+            "enabled"
+        } else {
+            "disabled"
         }
     );
 
@@ -148,7 +161,7 @@ async fn main() -> Result<()> {
         MAX_CONCURRENT_CONNECTIONS,
     ));
     let mut connections = JoinSet::new();
-    let upstream_client = upstream::build(upstream_addr);
+    let upstream_client = upstream::build(upstream_addr, auth.clone());
 
     loop {
         tokio::select! {
@@ -188,11 +201,12 @@ async fn main() -> Result<()> {
                             SocketConfiguration::CLIENT_INBOUND,
                         );
                         let client = upstream_client.clone();
+                        let auth = auth.clone();
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client).await {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });
