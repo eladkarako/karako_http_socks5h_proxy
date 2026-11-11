@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use http::{Request, Response, StatusCode};
+use hyper::body::Incoming;
 use std::io;
 use std::time::Duration;
 use tokio::io::{
@@ -7,11 +9,92 @@ use tokio::io::{
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+use crate::http::{empty_body, BoxBody};
+use crate::socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
+use crate::socks5::{
+    connect_to_socks5_server, establish_socks5_connection,
+};
+
 /// How long a tunnel may sit without any traffic in either direction
 /// before it is torn down.
 const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 const TUNNEL_BUFFER_SIZE: usize = 16 * 1024;
+
+/// Handles a `CONNECT` request by opening a SOCKS5 tunnel to the
+/// requested authority and upgrading the client connection to a raw
+/// byte stream.
+pub async fn connect_through_socks5(
+    req: Request<Incoming>,
+    host: String,
+    port: u16,
+    upstream_port: u16,
+    over_http2: bool,
+) -> Result<Response<BoxBody>> {
+    eprintln!(
+        "[CONNECT TUNNEL] Initiating tunnel to {}:{}",
+        host, port
+    );
+    let target_stream =
+        connect_to_socks5_server(upstream_port).await?;
+    let mut target_stream_clone = target_stream;
+    establish_socks5_connection(
+        &mut target_stream_clone,
+        &host,
+        port,
+    )
+        .await?;
+    configure_tokio_socket(
+        &target_stream_clone,
+        SocketConfiguration::SOCKS_TUNNEL,
+    )?;
+    eprintln!(
+        "[CONNECT TUNNEL] SOCKS5 connection established, sending 200 OK"
+    );
+    let mut response_builder =
+        Response::builder().status(StatusCode::OK);
+    // `Connection` is a hop-by-hop header and must not appear in an
+    // HTTP/2 response; h2 upgrades are implicit on a 2xx reply.
+    if !over_http2 {
+        response_builder = response_builder
+            .header(http::header::CONNECTION, "Upgrade");
+    }
+    let response = response_builder
+        .body(empty_body())
+        .context("Failed to build CONNECT response")?;
+    tokio::spawn(async move {
+        match hyper::upgrade::on(req).await {
+            Ok(upgraded) => {
+                eprintln!(
+                    "[CONNECT TUNNEL] Upgrade successful for {}:{}",
+                    host, port
+                );
+                if let Err(e) = handle_tunnel(
+                    upgraded,
+                    target_stream_clone,
+                    &host,
+                    port,
+                )
+                    .await
+                {
+                    eprintln!(
+                        "[CONNECT TUNNEL] Tunnel error for {}:{}: {:#}",
+                        host, port, e
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "[CONNECT TUNNEL] Upgrade failed for {}:{}: {}",
+                    host, port, e
+                );
+            }
+        }
+    });
+    Ok(response)
+}
 
 pub async fn handle_tunnel(
     upgraded: hyper::upgrade::Upgraded,

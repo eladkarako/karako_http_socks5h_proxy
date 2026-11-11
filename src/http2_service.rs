@@ -1,4 +1,3 @@
-use anyhow::bail;
 use http::{Request, Response};
 use hyper::body::Incoming;
 
@@ -27,9 +26,14 @@ pub(crate) async fn handle_h2_request(
     );
     match method.as_str() {
         "CONNECT" => {
-            bail!(
-                "CONNECT method not supported over HTTP/2; use HTTP/1.1"
+            crate::tunnel::connect_through_socks5(
+                req,
+                host,
+                port,
+                upstream_port,
+                true,
             )
+                .await
         }
         _ => {
             handle_http_request(req, &host, port, upstream_port)
