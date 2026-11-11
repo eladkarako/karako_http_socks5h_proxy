@@ -1,5 +1,18 @@
 26.11.11
 * use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
+* (63c892a) replace fragile peek-based protocol detection with the `hyper-util` auto server; HTTP/1.1 and HTTP/2 now share one service.
+* (963a078) parse request targets via `http::uri::Authority`, keeping bracketed IPv6 hosts; SOCKS5 now sends IPv4/IPv6/domain address types correctly instead of always domain.
+* (52c9f60) validate the SOCKS5 authentication method and bound the whole handshake with a single 10s timeout.
+* (67c86f4) stream request and response bodies through hyper instead of collecting them in memory; verified 1 MB uploads and chunked responses through Tor.
+* (eb9c732) replace the hard ten-minute CONNECT cap with a five-minute idle timeout.
+* (6a19cf8) strip hop-by-hop headers, including names listed in `Connection`, from forwarded requests and responses.
+* (009fa5c) support CONNECT over HTTP/2 and share the CONNECT path between HTTP/1.1 and HTTP/2.
+* (2bfeca2) distinguish client errors (400 Bad Request) from upstream failures (502 Bad Gateway) and stop leaking internal error text.
+* (0b70cc3) cap concurrent connections at 1024, reap handler tasks, back off on accept errors, and wake shutdown with `notify_one`.
+* (470906c) make socket tuning best-effort (failures are logged, the connection continues), drop `SO_LINGER`, and reduce oversized socket buffers.
+* (6fc7822) fix all clippy warnings in `build.rs` and `http.rs` and quiet per-connection logging.
+* (cbf1edc) add leveled logging: one line per request/CONNECT by default, `-v` for handshake/socket/timing details, `-vv` for raw SOCKS5 packet dumps, `-q` for errors only.
+* (8f61e77) do not send hop-by-hop headers in CONNECT 200 responses (verified over HTTP/1.1 and HTTP/2) and refresh README options and diagrams.
 
 26.11.1
 * (logic improvement) applying socket optimization when possible. SO_RCVBUF, SO_SNDBUF, TCP_NODELAY, TCP_CORK (linux only), TCP_QUICKACK (linux - actual, window - ACK frequency TCP_ACK_FREQUENCY), keepalive!!!!(retry+idle+interval)
