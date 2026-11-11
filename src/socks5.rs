@@ -53,7 +53,6 @@ pub async fn connect_to_socks5_server(
         &stream,
         SocketConfiguration::SOCKS_HANDSHAKE,
     );
-    eprintln!("[SOCKS5] Connected to {}", addr);
     Ok(stream)
 }
 
@@ -62,7 +61,6 @@ pub async fn establish_socks5_connection(
     host: &str,
     port: u16,
 ) -> Result<()> {
-    eprintln!("[SOCKS5] Starting handshake for {}:{}", host, port);
     timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
         perform_socks5_handshake(stream, host, port),
@@ -99,7 +97,6 @@ async fn send_socks5_greeting(stream: &mut TcpStream) -> Result<()> {
         .flush()
         .await
         .context("Failed to flush SOCKS5 greeting")?;
-    eprintln!("[SOCKS5] Sent greeting: {:?}", greeting);
     Ok(())
 }
 
@@ -111,10 +108,6 @@ async fn receive_socks5_greeting_response(
         .read_exact(&mut resp)
         .await
         .context("Failed to read SOCKS5 greeting response")?;
-    eprintln!(
-        "[SOCKS5] Greeting response: {:?} (ver={}, method={})",
-        resp, resp[0], resp[1]
-    );
     ensure!(
         resp[0] == SOCKS5_VERSION,
         "Invalid SOCKS5 version: {} (expected {})",
@@ -197,13 +190,6 @@ async fn send_socks5_connect_request(
         }
     }
     connect_req.extend_from_slice(&port.to_be_bytes());
-    eprintln!(
-        "[SOCKS5] CONNECT {}:{} (atyp=0x{:02X}, {} bytes)",
-        host,
-        port,
-        atyp,
-        connect_req.len()
-    );
     stream
         .write_all(&connect_req)
         .await
@@ -222,13 +208,6 @@ async fn receive_socks5_connect_response(
         .read_exact(&mut resp_header)
         .await
         .context("Failed to read SOCKS5 CONNECT response")?;
-    eprintln!(
-        "[SOCKS5] CONNECT response: ver={}, rep={}, rsv={}, atyp={}",
-        resp_header[0],
-        resp_header[1],
-        resp_header[2],
-        resp_header[3]
-    );
     ensure!(
         resp_header[0] == SOCKS5_VERSION,
         "Invalid SOCKS5 version in response: {} (expected {})",

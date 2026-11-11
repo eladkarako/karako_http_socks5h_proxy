@@ -127,15 +127,6 @@ pub fn configure_tokio_socket(
                 .with_retries(config.keepalive_retries),
         ),
     );
-    eprintln!(
-        "[SOCKET] [{}] Configured: recv={}KB send={}KB | keepalive idle={}s interval={}s retries={}",
-        config.name,
-        config.recv_buffer / 1024,
-        config.send_buffer / 1024,
-        config.keepalive_idle.as_secs(),
-        config.keepalive_interval.as_secs(),
-        config.keepalive_retries
-    );
 }
 
 fn report<T>(

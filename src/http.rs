@@ -232,7 +232,7 @@ pub async fn send_http_request(
             response_builder = response_builder.header(name, value);
         }
     }
-    Ok(response_builder
+    response_builder
         .body(box_incoming(body))
-        .context("Failed to build response")?)
+        .context("Failed to build response")
 }
