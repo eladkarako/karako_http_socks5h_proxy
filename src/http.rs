@@ -1,13 +1,41 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
 use std::convert::Infallible;
 
 pub(crate) use http::{Request, Response, StatusCode};
 
-pub(crate) type BoxBody =
-    http_body_util::combinators::BoxBody<Bytes, Infallible>;
+/// Type-erased body used for every proxy response.
+///
+/// The error is boxed so that a streamed upstream body can be passed
+/// through without collecting it in memory.
+pub(crate) type BoxBody = http_body_util::combinators::UnsyncBoxBody<
+    Bytes,
+    Box<dyn std::error::Error + Send + Sync>,
+>;
+
+pub(crate) fn empty_body() -> BoxBody {
+    Empty::<Bytes>::new()
+        .map_err(|never: Infallible| boxed_error(never))
+        .boxed_unsync()
+}
+
+pub(crate) fn full_body(body: impl Into<Bytes>) -> BoxBody {
+    Full::new(body.into())
+        .map_err(|never: Infallible| boxed_error(never))
+        .boxed_unsync()
+}
+
+pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
+    body.map_err(boxed_error).boxed_unsync()
+}
+
+fn boxed_error(
+    error: impl std::error::Error + Send + Sync + 'static,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(error)
+}
 
 pub(crate) struct Target {
     pub host: String,
@@ -61,48 +89,35 @@ fn default_port(
     }
 }
 
-pub async fn read_request_body(
-    req: &mut Request<Incoming>
-) -> Result<Vec<u8>> {
-    use http_body_util::BodyExt;
-    let body = req.body_mut();
-    let collected = body
-        .collect()
-        .await
-        .context("Error reading request body")?;
-    Ok(collected.to_bytes().to_vec())
-}
-
 pub fn build_forward_request(
     method: &http::Method,
     uri: &hyper::Uri,
     host: &str,
     port: u16,
-    req: &Request<Incoming>,
-    body_bytes: &[u8],
-) -> Result<Request<Full<Bytes>>> {
+    req: Request<Incoming>,
+) -> Result<Request<Incoming>> {
     let path_query = uri
         .path_and_query()
         .map(|pq| pq.to_string())
         .unwrap_or_else(|| "/".to_string());
     let forward_url =
         format!("http://{}:{}{}", host, port, path_query);
+    let (parts, body) = req.into_parts();
     let mut forward_req = Request::builder()
         .method(method.clone())
         .uri(forward_url)
         .version(hyper::Version::HTTP_11);
-    for (name, value) in req.headers().iter() {
-        let name_str = name.as_str();
-        if should_forward_header(&name_str) {
+    for (name, value) in parts.headers.iter() {
+        if should_forward_header(name.as_str()) {
             forward_req = forward_req.header(name, value);
         }
     }
-    forward_req =
-        forward_req.header("Host", format!("{}:{}", host, port));
-    forward_req = forward_req
-        .header("Content-Length", body_bytes.len().to_string());
+    forward_req = forward_req.header(
+        http::header::HOST,
+        format!("{}:{}", host, port),
+    );
     forward_req
-        .body(Full::new(Bytes::from(body_bytes.to_vec())))
+        .body(body)
         .context("Failed to build forward request")
 }
 
@@ -148,9 +163,9 @@ pub fn should_forward_header(name: &str) -> bool {
 
 pub async fn send_http_request(
     upstream_stream: tokio::net::TcpStream,
-    forward_req: Request<Full<Bytes>>,
+    forward_req: Request<Incoming>,
     method: &http::Method,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody>> {
     let io = hyper_util::rt::TokioIo::new(upstream_stream);
     let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
         .handshake(io)
@@ -166,31 +181,14 @@ pub async fn send_http_request(
         .await
         .context("Failed to send HTTP/1.1 request through SOCKS5")?;
     let (parts, body) = response.into_parts();
-    let body_bytes = if matches!(method.as_str(), "HEAD")
-        || matches!(
-            parts.status,
-            StatusCode::NO_CONTENT | StatusCode::NOT_MODIFIED
-        ) {
-        Bytes::new()
-    } else {
-        BodyExt::collect(body)
-            .await
-            .context("Failed to read response body")?
-            .to_bytes()
-    };
     let mut response_builder =
         Response::builder().status(parts.status);
     for (name, value) in parts.headers.iter() {
-        let name_str = name.as_str();
-        if should_forward_response_header(&name_str, method) {
+        if should_forward_response_header(name.as_str(), method) {
             response_builder = response_builder.header(name, value);
         }
     }
-    if method.as_str() != "HEAD" {
-        response_builder = response_builder
-            .header("Content-Length", body_bytes.len().to_string());
-    }
     Ok(response_builder
-        .body(Full::new(body_bytes))
+        .body(box_incoming(body))
         .context("Failed to build response")?)
 }

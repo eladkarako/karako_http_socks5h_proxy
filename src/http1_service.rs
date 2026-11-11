@@ -1,12 +1,9 @@
 use anyhow::Context;
-use bytes::Bytes;
 use http::{Request, Response, StatusCode};
-use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
 use crate::http::{
-    self, build_forward_request, extract_target, read_request_body,
-    BoxBody,
+    self, build_forward_request, extract_target, BoxBody,
 };
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
@@ -54,7 +51,7 @@ pub(crate) async fn handle_http1_request(
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("Connection", "Upgrade")
-                .body(Full::new(Bytes::new()).boxed())
+                .body(http::empty_body())
                 .context("Failed to build CONNECT response")?;
             tokio::spawn(async move {
                 match hyper::upgrade::on(req).await {
@@ -88,16 +85,12 @@ pub(crate) async fn handle_http1_request(
             Ok(response)
         }
         _ => {
-            let mut req_clone = req;
-            let body_bytes =
-                read_request_body(&mut req_clone).await?;
             let forward_req = build_forward_request(
                 &method,
                 &uri,
                 &host,
                 port,
-                &req_clone,
-                &body_bytes,
+                req,
             )?;
             let upstream_stream =
                 connect_to_socks5_server(upstream_port).await?;
@@ -108,27 +101,12 @@ pub(crate) async fn handle_http1_request(
                 port,
             )
                 .await?;
-            let response = http::send_http_request(
+            http::send_http_request(
                 upstream_stream_clone,
                 forward_req,
                 &method,
             )
-                .await?;
-            let (parts, body) = response.into_parts();
-            let body_bytes = if matches!(method.as_str(), "HEAD")
-                || matches!(
-                    parts.status,
-                    StatusCode::NO_CONTENT
-                        | StatusCode::NOT_MODIFIED
-                ) {
-                Bytes::new()
-            } else {
-                BodyExt::collect(body).await?.to_bytes()
-            };
-            Ok(Response::from_parts(
-                parts,
-                Full::new(body_bytes).boxed(),
-            ))
+                .await
         }
     }
 }

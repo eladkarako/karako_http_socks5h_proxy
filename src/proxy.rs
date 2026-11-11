@@ -1,6 +1,4 @@
 use anyhow::Result;
-use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::service::Service;
 use hyper::{Request, Response};
@@ -11,7 +9,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::http::{BoxBody, StatusCode};
+use crate::http::{full_body, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
 
@@ -64,9 +62,7 @@ impl Service<Request<Incoming>> for ProxyService {
 }
 
 fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
-    let body =
-        Full::new(Bytes::from(format!("Proxy error: {:#}", error)))
-            .boxed();
+    let body = full_body(format!("Proxy error: {:#}", error));
     Response::builder()
         .status(StatusCode::BAD_GATEWAY)
         .body(body)
