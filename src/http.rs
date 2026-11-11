@@ -2,8 +2,12 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
+use std::convert::Infallible;
 
 pub(crate) use http::{Request, Response, StatusCode};
+
+pub(crate) type BoxBody =
+    http_body_util::combinators::BoxBody<Bytes, Infallible>;
 
 pub fn extract_host(
     uri: &hyper::Uri,

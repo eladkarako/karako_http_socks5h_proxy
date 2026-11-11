@@ -3,14 +3,10 @@ use bytes::Bytes;
 use http::{Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
-use hyper::service::Service;
-use std::convert::Infallible;
-use std::pin::Pin;
-use tokio::net::TcpStream;
 
 use crate::http::{
     self, build_forward_request, extract_host, extract_port,
-    read_request_body,
+    read_request_body, BoxBody,
 };
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
@@ -20,101 +16,7 @@ use crate::socks5::{
 };
 use crate::tunnel::handle_tunnel;
 
-type BoxBody =
-http_body_util::combinators::BoxBody<Bytes, Infallible>;
-
-#[derive(Clone)]
-pub struct Socks5Http1ProxyService {
-    pub upstream_port: u16,
-    pub client_addr: std::net::SocketAddr,
-}
-
-impl Service<Request<Incoming>> for Socks5Http1ProxyService {
-    type Response = Response<BoxBody>;
-    type Error = Infallible;
-    type Future = Pin<
-        Box<
-            dyn std::future::Future<
-                Output=Result<Self::Response, Self::Error>,
-            > + Send
-            + 'static,
-        >,
-    >;
-
-    fn call(
-        &self,
-        req: Request<Incoming>,
-    ) -> Self::Future {
-        let upstream_port = self.upstream_port;
-        let client_addr = self.client_addr;
-        Box::pin(async move {
-            match handle_http1_request(
-                req,
-                upstream_port,
-                client_addr,
-            )
-                .await
-            {
-                Ok(response) => Ok(response),
-                Err(e) => {
-                    eprintln!(
-                        "HTTP/1.1 Request handling error: {:#}",
-                        e
-                    );
-                    Ok(Response::builder()
-                        .status(StatusCode::BAD_GATEWAY)
-                        .body(BoxBody::new(
-                            Full::new(Bytes::from(format!(
-                                "Proxy error: {}",
-                                e
-                            )))
-                                .boxed(),
-                        ))
-                        .unwrap())
-                }
-            }
-        })
-    }
-}
-
-pub async fn handle_http1_client_connection(
-    socket: TcpStream,
-    addr: std::net::SocketAddr,
-    upstream_port: u16,
-) -> anyhow::Result<()> {
-    eprintln!("[HTTP/1.1 CLIENT] New connection from {}", addr);
-    let io = hyper_util::rt::TokioIo::new(socket);
-    let service = Socks5Http1ProxyService {
-        upstream_port,
-        client_addr: addr,
-    };
-    match hyper::server::conn::http1::Builder::new()
-        .preserve_header_case(true)
-        .title_case_headers(false)
-        .serve_connection(io, service)
-        .with_upgrades()
-        .await
-    {
-        Ok(_) => {
-            eprintln!(
-                "[HTTP/1.1 CLIENT] Connection {} closed normally",
-                addr
-            );
-            Ok(())
-        }
-        Err(e) => {
-            if !e.to_string().contains("closed") {
-                eprintln!(
-                    "[HTTP/1.1 CLIENT] Connection {} error: {}",
-                    addr, e
-                );
-            }
-            Ok(())
-        }
-    }
-}
-
-async fn handle_http1_request(
+pub(crate) async fn handle_http1_request(
     req: Request<Incoming>,
     upstream_port: u16,
     client_addr: std::net::SocketAddr,
@@ -152,7 +54,7 @@ async fn handle_http1_request(
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("Connection", "Upgrade")
-                .body(BoxBody::new(Full::new(Bytes::new()).boxed()))
+                .body(Full::new(Bytes::new()).boxed())
                 .context("Failed to build CONNECT response")?;
             tokio::spawn(async move {
                 match hyper::upgrade::on(req).await {
@@ -225,7 +127,7 @@ async fn handle_http1_request(
             };
             Ok(Response::from_parts(
                 parts,
-                BoxBody::new(Full::new(body_bytes).boxed()),
+                Full::new(body_bytes).boxed(),
             ))
         }
     }

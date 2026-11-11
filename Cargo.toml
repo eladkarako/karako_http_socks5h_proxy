@@ -20,7 +20,7 @@ clap = { version = "4.6.7", features = ["derive", "wrap_help", "usage", "cargo",
 http = { version = "1.5.0" }
 http-body-util = { version = "0.1.5" }
 hyper = { version = "1.12.0", features = ["full", "http2", "http1", "client"] }
-hyper-util = { version = "0.1.21", features = ["tokio"] }
+hyper-util = { version = "0.1.21", features = ["tokio", "server-auto"] }
 tokio = { version = "1.54.1", features = ["full"] }
 socket2 = { version = "0.6.5", features = ["all"] }
 
