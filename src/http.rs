@@ -9,26 +9,56 @@ pub(crate) use http::{Request, Response, StatusCode};
 pub(crate) type BoxBody =
     http_body_util::combinators::BoxBody<Bytes, Infallible>;
 
-pub fn extract_host(
-    uri: &hyper::Uri,
-    req: &Request<Incoming>,
-) -> Result<String> {
-    if let Some(host) = uri.host() {
-        return Ok(host.to_string());
-    }
-    if let Some(host_header) = req.headers().get("Host") {
-        let host_str =
-            host_header.to_str().context("Invalid Host header")?;
-        if let Some((host, _port)) = host_str.split_once(':') {
-            return Ok(host.to_string());
-        }
-        return Ok(host_str.to_string());
-    }
-    anyhow::bail!("Cannot determine host from request")
+pub(crate) struct Target {
+    pub host: String,
+    pub port: u16,
 }
 
-pub fn extract_port(uri: &hyper::Uri) -> u16 {
-    uri.port_u16().unwrap_or(80)
+/// Parses the request target, falling back to the `Host` header when the
+/// request URI only carries an origin-form path.
+///
+/// IPv6 literal hosts are kept in bracketed form (for example `[::1]`) so
+/// that they stay valid inside URLs and `Host` headers.
+pub(crate) fn extract_target(
+    req: &Request<Incoming>,
+) -> Result<Target> {
+    let uri = req.uri();
+    if let Some(authority) = uri.authority() {
+        return Ok(Target {
+            host: authority.host().to_string(),
+            port: authority
+                .port_u16()
+                .unwrap_or_else(|| default_port(uri, req)),
+        });
+    }
+    let host_header = req
+        .headers()
+        .get(http::header::HOST)
+        .context("Request has neither an authority nor a Host header")?;
+    let host_str = host_header
+        .to_str()
+        .context("Invalid Host header encoding")?;
+    let authority: http::uri::Authority = host_str
+        .parse()
+        .context("Invalid Host header authority")?;
+    Ok(Target {
+        host: authority.host().to_string(),
+        port: authority
+            .port_u16()
+            .unwrap_or_else(|| default_port(uri, req)),
+    })
+}
+
+fn default_port(
+    uri: &hyper::Uri,
+    req: &Request<Incoming>,
+) -> u16 {
+    match uri.scheme_str() {
+        Some("https") => 443,
+        Some("http") => 80,
+        _ if req.method() == http::Method::CONNECT => 443,
+        _ => 80,
+    }
 }
 
 pub async fn read_request_body(

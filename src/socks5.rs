@@ -94,84 +94,86 @@ async fn receive_socks5_greeting_response(
     Ok(())
 }
 
+enum Socks5Address<'a> {
+    Ipv4([u8; 4]),
+    Ipv6([u8; 16]),
+    Domain(&'a str),
+}
+
+fn classify_host(host: &str) -> Result<Socks5Address<'_>> {
+    let bare = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    if let Ok(ip) = bare.parse::<std::net::Ipv4Addr>() {
+        return Ok(Socks5Address::Ipv4(ip.octets()));
+    }
+    if let Ok(ip) = bare.parse::<std::net::Ipv6Addr>() {
+        return Ok(Socks5Address::Ipv6(ip.octets()));
+    }
+    ensure!(
+        !host.is_empty() && host.len() <= MAX_HOSTNAME_LEN,
+        "Invalid hostname length: {} bytes (expected 1..={})",
+        host.len(),
+        MAX_HOSTNAME_LEN
+    );
+    Ok(Socks5Address::Domain(host))
+}
+
 async fn send_socks5_connect_request(
     stream: &mut TcpStream,
     host: &str,
     port: u16,
 ) -> Result<()> {
-    eprintln!("[SOCKS5] Domain bytes: {:?}", host.as_bytes());
-    ensure!(
-        host.len() <= MAX_HOSTNAME_LEN,
-        "Hostname too long: {} bytes",
-        host.len()
-    );
-    let mut connect_req = vec![0u8; 5 + host.len() + 2];
-    connect_req[0] = SOCKS5_VERSION;
-    connect_req[1] = SOCKS5_CMD_CONNECT;
-    connect_req[2] = 0;
-    connect_req[3] = SOCKS5_ATYP_DOMAIN;
-    connect_req[4] = host.len() as u8;
-    connect_req[5..5 + host.len()].copy_from_slice(host.as_bytes());
-    connect_req[5 + host.len()] = (port >> 8) as u8;
-    connect_req[6 + host.len()] = (port & 0xff) as u8;
-    eprintln!("[SOCKS5] Host: '{}' (len={})", host, host.len());
-    eprintln!(
-        "[SOCKS5] Port: {} (0x{:04X}) -> bytes: [0x{:02X}, 0x{:02X}]",
-        port,
-        port,
-        (port >> 8) as u8,
-        (port & 0xff) as u8
-    );
-    eprintln!(
-        "[SOCKS5] Full CONNECT request ({} bytes):",
-        connect_req.len()
-    );
-    let mut hex_str = String::new();
-    for (i, byte) in connect_req.iter().enumerate() {
-        hex_str.push_str(&format!("0x{:02X} ", byte));
-        if (i + 1) % 8 == 0 {
-            eprintln!("  [{}..{}] {}", i - 7, i, hex_str);
-            hex_str.clear();
+    let address = classify_host(host)?;
+    let atyp = match address {
+        Socks5Address::Ipv4(_) => SOCKS5_ATYP_IPV4,
+        Socks5Address::Ipv6(_) => SOCKS5_ATYP_IPV6,
+        Socks5Address::Domain(_) => SOCKS5_ATYP_DOMAIN,
+    };
+    let address_len = match address {
+        Socks5Address::Ipv4(_) => 4,
+        Socks5Address::Ipv6(_) => 16,
+        Socks5Address::Domain(name) => 1 + name.len(),
+    };
+    let mut connect_req =
+        Vec::with_capacity(4 + address_len + 2);
+    connect_req.extend_from_slice(&[
+        SOCKS5_VERSION,
+        SOCKS5_CMD_CONNECT,
+        0,
+        atyp,
+    ]);
+    match &address {
+        Socks5Address::Ipv4(octets) => {
+            connect_req.extend_from_slice(octets);
+        }
+        Socks5Address::Ipv6(octets) => {
+            connect_req.extend_from_slice(octets);
+        }
+        Socks5Address::Domain(name) => {
+            connect_req.push(name.len() as u8);
+            connect_req.extend_from_slice(name.as_bytes());
         }
     }
-    if !hex_str.is_empty() {
-        eprintln!("  [rest] {}", hex_str);
-    }
-    eprintln!("[SOCKS5] [0] VER=0x{:02X}", connect_req[0]);
-    eprintln!("[SOCKS5] [1] CMD=0x{:02X}", connect_req[1]);
-    eprintln!("[SOCKS5] [2] RSV=0x{:02X}", connect_req[2]);
-    eprintln!("[SOCKS5] [3] ATYP=0x{:02X}", connect_req[3]);
+    connect_req.extend_from_slice(&port.to_be_bytes());
     eprintln!(
-        "[SOCKS5] [4] DLEN=0x{:02X} ({})",
-        connect_req[4], connect_req[4]
-    );
-    eprintln!("[SOCKS5] [5..{}] DNAME={}", 4 + host.len(), host);
-    eprintln!(
-        "[SOCKS5] [{}..{}] PORT=[0x{:02X}, 0x{:02X}]",
-        5 + host.len(),
-        5 + host.len() + 1,
-        connect_req[5 + host.len()],
-        connect_req[5 + host.len() + 1]
-    );
-    eprintln!(
-        "[SOCKS5] Sending CONNECT request ({} bytes) for {}:{}",
-        connect_req.len(),
+        "[SOCKS5] CONNECT {}:{} (atyp=0x{:02X}, {} bytes)",
         host,
-        port
+        port,
+        atyp,
+        connect_req.len()
     );
     timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
-        stream.write_all(&connect_req),
+        async {
+            stream.write_all(&connect_req).await?;
+            stream.flush().await
+        },
     )
         .await
         .context("SOCKS5 CONNECT write timeout")?
-        .context("Failed to send SOCKS5 CONNECT")?;
-    stream
-        .flush()
-        .await
-        .context("Failed to flush SOCKS5 CONNECT")?;
-    eprintln!("[SOCKS5] CONNECT request sent successfully");
-    Ok(())
+        .context("Failed to send SOCKS5 CONNECT")
 }
 
 async fn receive_socks5_connect_response(

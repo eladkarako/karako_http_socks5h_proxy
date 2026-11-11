@@ -4,8 +4,8 @@ use http_body_util::BodyExt;
 use hyper::body::Incoming;
 
 use crate::http::{
-    self, build_forward_request, extract_host, extract_port,
-    read_request_body, BoxBody,
+    self, build_forward_request, extract_target, read_request_body,
+    BoxBody,
 };
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
@@ -21,8 +21,8 @@ pub(crate) async fn handle_h2_request(
 ) -> anyhow::Result<Response<BoxBody>> {
     let method = req.method().clone();
     let uri = req.uri().clone();
-    let host = extract_host(&uri, &req)?;
-    let port = extract_port(&uri);
+    let target = extract_target(&req)?;
+    let (host, port) = (target.host, target.port);
     eprintln!(
         "[HTTP/2] {} {} (host: {}:{}) from {}",
         method, uri, host, port, client_addr
