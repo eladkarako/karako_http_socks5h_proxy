@@ -52,7 +52,7 @@ pub async fn connect_to_socks5_server(
     configure_tokio_socket(
         &stream,
         SocketConfiguration::SOCKS_HANDSHAKE,
-    )?;
+    );
     eprintln!("[SOCKS5] Connected to {}", addr);
     Ok(stream)
 }

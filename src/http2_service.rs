@@ -60,7 +60,7 @@ async fn handle_http_request(
     configure_tokio_socket(
         &upstream_stream,
         SocketConfiguration::SOCKS_HTTP_REQUEST,
-    )?;
+    );
     http::send_http_request(
         upstream_stream,
         forward_req,

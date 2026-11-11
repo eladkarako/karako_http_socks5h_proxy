@@ -33,7 +33,8 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::socket_config::{
-    configure_tokio_socket, SocketConfiguration,
+    configure_listener_socket, configure_tokio_socket,
+    SocketConfiguration,
 };
 
 /// Upper bound on simultaneously handled client connections.
@@ -61,6 +62,7 @@ async fn main() -> Result<()> {
                 args.http_port
             )
         })?;
+    configure_listener_socket(&listener);
 
     eprintln!(
         "HTTP/1.1 + HTTP/2 proxy listening on 127.0.0.1:{}",
@@ -144,9 +146,10 @@ async fn main() -> Result<()> {
                                 continue;
                             }
                         };
-                        if let Err(e) = configure_tokio_socket(&socket, SocketConfiguration::CLIENT_INBOUND) {
-                            eprintln!("[SOCKET] Failed to configure inbound client socket: {:#}", e);
-                        }
+                        configure_tokio_socket(
+                            &socket,
+                            SocketConfiguration::CLIENT_INBOUND,
+                        );
                         let upstream_port = args.upstream_port;
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so

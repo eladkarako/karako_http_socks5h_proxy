@@ -49,7 +49,7 @@ pub async fn connect_through_socks5(
     configure_tokio_socket(
         &target_stream_clone,
         SocketConfiguration::SOCKS_TUNNEL,
-    )?;
+    );
     eprintln!(
         "[CONNECT TUNNEL] SOCKS5 connection established, sending 200 OK"
     );
