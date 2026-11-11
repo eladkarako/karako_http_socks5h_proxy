@@ -214,7 +214,7 @@ fn should_forward_response_header(
 }
 
 pub async fn send_http_request(
-    upstream_stream: tokio::net::TcpStream,
+    client: &crate::upstream::UpstreamClient,
     forward_req: Request<Incoming>,
     method: &http::Method,
 ) -> Result<Response<BoxBody>> {
@@ -225,19 +225,9 @@ pub async fn send_http_request(
         forward_req.uri(),
         forward_req.headers().len()
     );
-    let io = hyper_util::rt::TokioIo::new(upstream_stream);
-    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-        .handshake(io)
-        .await
-        .context("Failed to establish HTTP/1.1 connection through SOCKS5")?;
-    tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            log_warn!("Upstream HTTP/1.1 connection error: {}", e);
-        }
-    });
     let response = tokio::time::timeout(
         UPSTREAM_RESPONSE_HEADER_TIMEOUT,
-        sender.send_request(forward_req),
+        client.request(forward_req),
     )
     .await
     .with_context(|| {

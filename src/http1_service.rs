@@ -4,14 +4,13 @@ use hyper::body::{Body, Incoming};
 use crate::http::{
     self, build_forward_request, extract_target, BoxBody,
 };
-use crate::socks5::{
-    connect_to_socks5_server, establish_socks5_connection,
-};
+use crate::upstream::UpstreamClient;
 
 pub(crate) async fn handle_http1_request(
     req: Request<Incoming>,
     upstream_port: u16,
     client_addr: std::net::SocketAddr,
+    client: UpstreamClient,
 ) -> anyhow::Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     let method = req.method().clone();
@@ -46,20 +45,7 @@ pub(crate) async fn handle_http1_request(
                 port,
                 req,
             )?;
-            let upstream_stream =
-                connect_to_socks5_server(upstream_port).await?;
-            let mut upstream_stream_clone = upstream_stream;
-            establish_socks5_connection(
-                &mut upstream_stream_clone,
-                &host,
-                port,
-            )
-                .await?;
-            http::send_http_request(
-                upstream_stream_clone,
-                forward_req,
-                &method,
-            )
+            http::send_http_request(&client, forward_req, &method)
                 .await
         }
     };

@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 use crate::http::{full_body, BadRequestError, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
+use crate::upstream::UpstreamClient;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -27,10 +28,11 @@ const H2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// connection.
 const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ProxyService {
     upstream_port: u16,
     client_addr: SocketAddr,
+    client: UpstreamClient,
 }
 
 impl Service<Request<Incoming>> for ProxyService {
@@ -47,10 +49,16 @@ impl Service<Request<Incoming>> for ProxyService {
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         let upstream_port = self.upstream_port;
         let client_addr = self.client_addr;
+        let client = self.client.clone();
         Box::pin(async move {
             let result = match req.version() {
                 hyper::Version::HTTP_2 => {
-                    handle_h2_request(req, upstream_port, client_addr)
+                    handle_h2_request(
+                        req,
+                        upstream_port,
+                        client_addr,
+                        client,
+                    )
                         .await
                 }
                 _ => {
@@ -58,6 +66,7 @@ impl Service<Request<Incoming>> for ProxyService {
                         req,
                         upstream_port,
                         client_addr,
+                        client,
                     )
                         .await
                 }
@@ -95,12 +104,14 @@ pub async fn handle_client_connection(
     socket: TcpStream,
     addr: SocketAddr,
     upstream_port: u16,
+    client: UpstreamClient,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
     let service = ProxyService {
         upstream_port,
         client_addr: addr,
+        client,
     };
     let mut builder =
         hyper_util::server::conn::auto::Builder::new(

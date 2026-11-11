@@ -30,6 +30,8 @@ mod http1_service;
 
 mod http2_service;
 
+mod upstream;
+
 use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::Duration;
@@ -145,6 +147,7 @@ async fn main() -> Result<()> {
         MAX_CONCURRENT_CONNECTIONS,
     ));
     let mut connections = JoinSet::new();
+    let upstream_client = upstream::build(args.upstream_port);
 
     loop {
         tokio::select! {
@@ -184,11 +187,12 @@ async fn main() -> Result<()> {
                             SocketConfiguration::CLIENT_INBOUND,
                         );
                         let upstream_port = args.upstream_port;
+                        let client = upstream_client.clone();
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port).await {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_port, client).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });
