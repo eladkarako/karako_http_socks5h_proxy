@@ -36,7 +36,9 @@ most programs will use HTTP1.1 `CONNECT`, and once the TCP tunnel established it
 that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).  
 you can set firefox and edge browsers to use it as HTTP proxy, and it works very well.
 
-by design limitations: hostname is hard-coded by design to be `127.0.0.1`. both `SOCKS5h` upstream server and this program must run on same machine.  
+by default the upstream `SOCKS5h` server is expected on `127.0.0.1`; use `--upstream-host` if it runs elsewhere.  
+the HTTP listener binds to `127.0.0.1` by default; use `--bind` for another address such as `::1` or `0.0.0.0`.  
+both the proxy and the upstream server normally run on the same machine, but they no longer have to.
 
 binaries provided, supports many OS and architectures.
 
@@ -65,6 +67,99 @@ sample `-vv`
 [TUNNEL] Tunnel example.com:443 closed normally after 707ms: client→target: 1893 bytes, target→client: 6006 bytes
 ```
 
+<hr/>
+
+## How to use / manual test recipes
+
+The examples below assume a SOCKS5h server on
+`127.0.0.1:9150` and start the proxy on port `18765`:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150
+```
+
+### Plain HTTP through the proxy
+
+```bash
+curl -x http://127.0.0.1:18765 http://example.com/
+```
+
+### HTTPS through a CONNECT tunnel
+
+```bash
+curl -k -x http://127.0.0.1:18765 https://example.com/
+```
+
+`-k` is only needed here because the curl build may not trust the test
+certificate chain; HTTPS itself is tunnelled end to end.
+
+### HEAD, 204 and 304 responses
+
+```bash
+curl -I -x http://127.0.0.1:18765 http://example.com/
+curl -s -o NUL -w "%{http_code}\n" -x http://127.0.0.1:18765 http://httpbin.org/status/204
+curl -s -o NUL -w "%{http_code}\n" -x http://127.0.0.1:18765 http://httpbin.org/status/304
+```
+
+### Streaming a large request body
+
+```bash
+# 1 MiB of random data
+python -c "import os;open('body.bin','wb').write(os.urandom(1024*1024))"
+curl -x http://127.0.0.1:18765 --data-binary @body.bin http://httpbin.org/post
+```
+
+The proxy forwards the body as it arrives; it is never collected in
+memory.
+
+### Verify upstream connection reuse
+
+Send two requests to the same origin in one command. With `-v` you
+should see a single `SOCKS5 Handshake complete` line for that origin:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 -v
+curl -s -o NUL -x http://127.0.0.1:18765 http://example.com/ http://example.com/
+```
+
+### Inspect the `Via` header
+
+```bash
+curl -s -D - -o NUL -x http://127.0.0.1:18765 http://example.com/ | findstr /i "^via:"
+```
+
+### Listen on IPv6 loopback
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 --bind ::1
+curl -x "http://[::1]:18765" http://example.com/
+```
+
+### Upstream SOCKS5 on another host
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 --upstream-host 192.168.1.10
+```
+
+### Username/password authentication (RFC 1929)
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --socks5-username alice --socks5-password secret
+```
+
+some proxies accepts any username/password and uses the username as an isolation
+key; other SOCKS5 servers may validate them.
+
+### Logging levels
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150        # one line per request
+karako_http_socks5h_proxy -p 18765 -u 9150 -v     # handshake, socket and timing details
+karako_http_socks5h_proxy -p 18765 -u 9150 -vv    # also dump raw SOCKS5 packets
+karako_http_socks5h_proxy -p 18765 -u 9150 -q     # errors only
+```
+
 </details>
 
 <hr/>
@@ -81,11 +176,14 @@ sample `-vv`
 
 Key features:
 - Protocol detection: HTTP/1.1 and HTTP/2 handled by `hyper-util`'s auto server
+- Upstream pooling: HTTP connections are reused per `host:port` through the SOCKS5h server
 - CONNECT support: HTTPS tunneling over HTTP/1.1 and HTTP/2, with a 5-minute idle timeout
-- Streaming: request and response bodies are forwarded as they arrive, never buffered whole
+- Streaming: request and response bodies are forwarded as they arrive, never buffered whole, with a 60-second upstream idle timeout
 - SOCKS5h compliant: Uses domain names instead of IP addresses (privacy-friendly)
-- Optimized: LTO compilation, socket tuning, graceful shutdown
-- Cross-platform: Windows icons/manifests, Linux mimalloc, tested on x86_64/ARM
+- SOCKS5 authentication: optional RFC 1929 username/password support
+- Robustness: bounded concurrency, graceful drain on shutdown, task panics are contained and logged
+- Optimized: LTO compilation, socket tuning, `release-size` profile
+- Cross-platform: Windows icons/manifests and console-close handling, Linux mimalloc, tested on x86_64/ARM
 
 <hr/>
 
