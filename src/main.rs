@@ -1,3 +1,14 @@
+//! Entry point and connection lifecycle.
+//!
+//! Startup goes: parse arguments, install logging, publish buffer tuning,
+//! build the shared upstream client, bind the listener, then accept until
+//! a shutdown signal arrives. Every accepted socket gets a permit from a
+//! semaphore so the process cannot be pushed into unbounded concurrency.
+//!
+//! Shutdown stops accepting, gives in-flight connections a short grace
+//! period, and aborts whatever is left. A second Ctrl+C skips the grace
+//! period entirely.
+
 #[cfg(all(
     any(target_os = "linux", target_os = "windows"),
     any(
@@ -58,9 +69,11 @@ const MAX_CONCURRENT_CONNECTIONS: usize = 1024;
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(8);
 
 #[cfg(target_os = "windows")]
+/// Line ending used in multi-line console messages.
 const EOL: &str = "\r\n";
 
 #[cfg(not(target_os = "windows"))]
+/// Line ending used in multi-line console messages.
 const EOL: &str = "\n";
 
 #[tokio::main]
@@ -150,6 +163,8 @@ async fn main() -> Result<()> {
 
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
+    // Ctrl+C is handled in its own task so the accept loop only has to
+    // watch one shutdown signal.
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_err() {
             log_warn!("Failed to listen for Ctrl+C");
@@ -226,6 +241,9 @@ async fn main() -> Result<()> {
         upstream_http_client::build(upstream_addr, auth.clone());
 
     loop {
+        // `join_next` doubles as a way to reap finished tasks while
+        // waiting, so a failing task is reported promptly instead of
+        // accumulating in the set.
         tokio::select! {
             _ = shutdown.notified() => break,
             Some(result) = connections.join_next(), if !connections.is_empty() => {

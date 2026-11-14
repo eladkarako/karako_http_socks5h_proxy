@@ -1,21 +1,42 @@
+//! Per-role socket settings.
+//!
+//! Each socket the proxy opens has a different traffic pattern, so the
+//! buffer sizes and keepalive timings live in named [`SocketConfiguration`]
+//! constants instead of one global default. Everything here is
+//! best-effort: an unsupported option is logged and the connection
+//! continues.
+//!
+//! Command-line overrides from [`crate::runtime_buffer_tuning`] replace
+//! the receive/send sizes for every role at once.
+
 use socket2::SockRef;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 
+/// Tuning for one kind of socket.
 #[derive(Debug, Clone, Copy)]
 pub struct SocketConfiguration {
+    /// Requested `SO_RCVBUF`, unless a global override is set.
     pub recv_buffer: usize,
+    /// Requested `SO_SNDBUF`, unless a global override is set.
     pub send_buffer: usize,
+    /// Whether to enable `TCP_CORK` (Linux/Android only).
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub tcp_cork: bool,
+    /// Whether to ask for quick ACKs where the platform supports it.
     pub tcp_quickack: bool,
+    /// Idle time before the first keepalive probe.
     pub keepalive_idle: Duration,
+    /// Gap between keepalive probes.
     pub keepalive_interval: Duration,
+    /// Probes before the connection is considered dead.
     pub keepalive_retries: u32,
+    /// Short name used in socket log lines.
     pub name: &'static str,
 }
 
 impl SocketConfiguration {
+    /// Sockets accepted from clients: mostly request/response headers.
     pub const CLIENT_INBOUND: Self = Self {
         recv_buffer: 256 * 1024,
         send_buffer: 256 * 1024,
@@ -28,6 +49,7 @@ impl SocketConfiguration {
         name: "ClientInbound",
     };
 
+    /// Sockets to the SOCKS5 server while the handshake is running.
     pub const SOCKS_HANDSHAKE: Self = Self {
         recv_buffer: 64 * 1024,
         send_buffer: 64 * 1024,
@@ -40,6 +62,10 @@ impl SocketConfiguration {
         name: "SocksHandshake",
     };
 
+    /// Sockets carrying tunneled bytes after a successful `CONNECT`.
+    ///
+    /// These see sustained bidirectional traffic, so they get the largest
+    /// buffers and the longest keepalive idle time.
     pub const SOCKS_TUNNEL: Self = Self {
         recv_buffer: 512 * 1024,
         send_buffer: 512 * 1024,
@@ -52,6 +78,7 @@ impl SocketConfiguration {
         name: "SocksTunnel",
     };
 
+    /// Pooled sockets used for forwarded HTTP requests.
     pub const SOCKS_HTTP_REQUEST: Self = Self {
         recv_buffer: 256 * 1024,
         send_buffer: 256 * 1024,
@@ -160,6 +187,10 @@ pub fn configure_tokio_socket(
     );
 }
 
+/// Logs a failed socket option instead of failing the connection.
+///
+/// None of these options affects correctness, and some are unavailable
+/// on older kernels or non-default network stacks.
 fn report<T>(
     socket_name: &str,
     option: &str,
@@ -176,6 +207,8 @@ fn report<T>(
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
+/// Applies the Linux-only options: optional corking, quick ACKs, and a
+/// user timeout derived from the keepalive idle time.
 fn apply_linux_optimizations(
     socket_ref: &SockRef,
     config: &SocketConfiguration,
@@ -202,6 +235,7 @@ fn apply_linux_optimizations(
 }
 
 #[cfg(target_os = "windows")]
+/// Asks Windows to ACK every segment; the closest analogue to quick ACK.
 fn apply_windows_optimizations(
     socket_ref: &SockRef,
     config: &SocketConfiguration,

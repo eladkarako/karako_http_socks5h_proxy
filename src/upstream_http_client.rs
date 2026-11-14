@@ -1,3 +1,11 @@
+//! Pooled HTTP client whose transport is a SOCKS5 connection.
+//!
+//! `hyper-util`'s legacy client handles pooling, retries and HTTP/1.1
+//! framing; the only custom part is [`SocksConnector`], which opens a
+//! fresh SOCKS5 connection whenever the pool needs one. Because the
+//! connector receives the destination URI, host names still reach the
+//! SOCKS5 server unresolved.
+
 use anyhow::Context;
 use std::future::Future;
 use std::pin::Pin;
@@ -53,7 +61,9 @@ pub(crate) fn build(
 /// connection for the requested `host:port`.
 #[derive(Clone)]
 pub(crate) struct SocksConnector {
+    /// SOCKS5 server each new connection is opened through.
     upstream_addr: std::net::SocketAddr,
+    /// Credentials for that server.
     auth: Socks5Auth,
 }
 
@@ -106,6 +116,8 @@ impl Service<Uri> for SocksConnector {
     }
 }
 
+/// TLS is impossible on this leg, so only `http` is meaningful; the
+/// fallback keeps explicit and implicit ports consistent.
 fn default_port(uri: &Uri) -> u16 {
     match uri.scheme_str() {
         Some("https") => 443,

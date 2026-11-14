@@ -1,3 +1,10 @@
+//! Logging and protocol-dump helpers.
+//!
+//! The rest of the program logs through the `log_*` macros in this
+//! module rather than calling `tracing` directly, which keeps level names
+//! aligned with the `-q`/`-v`/`-vv` flags. Output goes through a
+//! non-blocking writer, so a stalled console never blocks a request.
+
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::LevelFilter;
 
@@ -51,6 +58,10 @@ pub fn hex_dump(bytes: &[u8]) -> String {
     out.trim_end().to_string()
 }
 
+/// Formatting-only macros that forward to `tracing`.
+///
+/// They exist so call sites read `log_info!` instead of
+/// `tracing::info!`, matching the level names used by the CLI flags.
 macro_rules! log_error {
     ($($arg:tt)*) => {
         ::tracing::error!($($arg)*)

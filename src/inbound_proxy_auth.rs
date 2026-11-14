@@ -1,3 +1,9 @@
+//! Optional authentication of clients that use this proxy.
+//!
+//! This is separate from SOCKS5 credentials: it protects the listener in
+//! front of the proxy, not the connection behind it. The expected header
+//! value is computed once at startup and compared byte for byte.
+
 use base64::Engine;
 use http::header::{HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION};
 use hyper::body::Incoming;
@@ -11,10 +17,15 @@ use crate::proxy_http_forwarder::{full_body, BoxBody, StatusCode};
 /// checking a request is a single header lookup and byte comparison.
 #[derive(Clone, Default)]
 pub(crate) struct ProxyAuth {
+    /// Complete `Basic <base64>` value, or `None` when auth is disabled.
     expected: Option<HeaderValue>,
 }
 
 impl ProxyAuth {
+    /// Builds the credential check from the CLI options.
+    ///
+    /// The argument parser already guarantees that both halves are
+    /// present together; a partial pair simply disables authentication.
     pub(crate) fn new(
         username: Option<String>,
         password: Option<String>,
@@ -37,6 +48,7 @@ impl ProxyAuth {
         }
     }
 
+    /// Whether a request without credentials should be challenged.
     pub(crate) fn is_enabled(&self) -> bool {
         self.expected.is_some()
     }

@@ -1,3 +1,11 @@
+//! Connection-level HTTP service shared by both protocol versions.
+//!
+//! `hyper-util`'s auto server detects HTTP/1.1 versus HTTP/2 and calls
+//! [`ProxyService`] for each request or stream. The service enforces
+//! optional client authentication, dispatches to the version-specific
+//! handler, and converts any error into the status code carried by
+//! [`ProxyError`].
+
 use anyhow::Result;
 use hyper::body::Incoming;
 use hyper::service::Service;
@@ -19,6 +27,10 @@ use crate::proxy_error_types::ProxyError;
 use crate::socks5_handshake_flow::Socks5Auth;
 use crate::upstream_http_client::UpstreamClient;
 
+/// How long a client may take to send request headers.
+///
+/// Slow-header attacks would otherwise hold a connection slot open
+/// indefinitely; the value is generous enough for slow links.
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Upper bound on concurrently multiplexed HTTP/2 streams per client
@@ -33,13 +45,23 @@ const H2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// connection.
 const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Cloneable request handler for one accepted client connection.
+///
+/// The upstream client is a pool handle, so cloning is cheap and all
+/// clones share the same connections.
 #[derive(Clone)]
 struct ProxyService {
+    /// SOCKS5 server every forwarded request is sent through.
     upstream_addr: SocketAddr,
+    /// Peer address, used for logs and `X-Forwarded-For`.
     client_addr: SocketAddr,
+    /// Pooled upstream HTTP client.
     client: UpstreamClient,
+    /// Upstream SOCKS5 credentials.
     auth: Socks5Auth,
+    /// Inbound client authentication policy.
     inbound_auth: ProxyAuth,
+    /// Which optional headers to add.
     forwarding: ForwardingOptions,
 }
 
@@ -108,6 +130,10 @@ impl Service<Request<Incoming>> for ProxyService {
     }
 }
 
+/// Maps a handler error to the response sent to the client.
+///
+/// `BadRequest` keeps its message because it describes a client mistake;
+/// upstream failures use fixed text so internal details stay in the logs.
 fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
     let (status, message) =
         match error.downcast_ref::<ProxyError>() {
@@ -130,6 +156,11 @@ fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
         .expect("valid error response")
 }
 
+/// Serves one client connection until it closes or errors.
+///
+/// Protocol detection and connection reuse are delegated to `hyper-util`.
+/// Returning `Ok(())` for a connection-level error is deliberate: the
+/// error is already logged, and the listener should keep running.
 pub async fn handle_client_connection(
     socket: TcpStream,
     addr: SocketAddr,
