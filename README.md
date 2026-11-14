@@ -8,16 +8,22 @@ HTTP proxy that tunnels through SOCKS5h
 Usage: karako_http_socks5h_proxy [OPTIONS]
 
 Options:
-  -p, --http-port <HTTP_PORT>          [default: 8765]
-  -u, --upstream-port <UPSTREAM_PORT>  [default: 5678]
-  -b, --bind <BIND>                    Address to bind the HTTP proxy listener on [default: 127.0.0.1]
-      --upstream-host <UPSTREAM_HOST>  Host of the upstream SOCKS5 server [default: 127.0.0.1]
+  -p, --http-port <HTTP_PORT>              [default: 8765]
+  -u, --upstream-port <UPSTREAM_PORT>      [default: 5678]
+  -b, --bind <BIND>                        Address to bind the HTTP proxy listener on [default: 127.0.0.1]
+      --upstream-host <UPSTREAM_HOST>      Host of the upstream SOCKS5 server [default: 127.0.0.1]
       --socks5-username <SOCKS5_USERNAME>  Username for SOCKS5 username/password authentication
       --socks5-password <SOCKS5_PASSWORD>  Password for SOCKS5 username/password authentication
-  -v, --verbose...                     Increase log verbosity (use twice to dump SOCKS5 packets)
-  -q, --quiet                          Only log errors
-  -h, --help                           Print help
-  -V, --version                        Print version
+      --socks5-password-file <PATH>        File containing the SOCKS5 password
+      --proxy-username <PROXY_USERNAME>    Username required from HTTP clients (Basic auth)
+      --proxy-password <PROXY_PASSWORD>    Password required from HTTP clients (Basic auth)
+      --allow-non-local                    Allow binding to a non-loopback address
+      --no-via                             Omit the Via header from forwarded messages
+      --x-forwarded-for                    Add X-Forwarded-For with the client address
+  -v, --verbose...                         Increase log verbosity (use twice to dump SOCKS5 packets)
+  -q, --quiet                              Only log errors
+  -h, --help                               Print help
+  -V, --version                            Print version
 ```
 
 <hr/>
@@ -63,7 +69,7 @@ sample `-vv`
 05 01 00 03 0B 65 78 61 6D 70 6C 65 2E 63 6F 6D
 01 BB
 [UPSTREAM] -> 200 OK in 647ms (12 response header(s))
-[HTTP/1.1] GET http://example.com/ -> 200 OK in 2.48s
+[HTTP/1.1] GET / -> 200 OK in 2.48s
 [TUNNEL] Tunnel example.com:443 closed normally after 707ms: client→target: 1893 bytes, target→client: 6006 bytes
 ```
 
@@ -151,6 +157,61 @@ karako_http_socks5h_proxy -p 18765 -u 9150 \
 some proxies accepts any username/password and uses the username as an isolation
 key; other SOCKS5 servers may validate them.
 
+### Password from a file or environment
+
+Command-line arguments are visible to other users through the process
+list. Prefer one of these instead:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --socks5-username alice --socks5-password-file ./socks.pw
+
+KARAKO_SOCKS5_PASSWORD=secret karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --socks5-username alice
+```
+
+A trailing newline in the password file is stripped.
+`--socks5-password-file` takes precedence over the environment variable,
+which takes precedence over `--socks5-password`.
+
+### Require clients to authenticate
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --proxy-username alice --proxy-password secret
+
+curl -x http://alice:secret@127.0.0.1:18765 http://example.com/
+```
+
+Requests without the matching `Proxy-Authorization: Basic` value receive
+`407 Proxy Authentication Required`.
+
+### Listen beyond loopback
+
+Binding to anything other than a loopback address requires an explicit
+opt-in, because the listener exposes the upstream SOCKS5 server to the
+network:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 --bind 0.0.0.0 --allow-non-local
+```
+
+Combine it with `--proxy-username`/`--proxy-password` unless the network
+is trusted.
+
+### Forwarding headers
+
+`Via` is added by default. Pass `--no-via` to keep the proxy out of the
+forwarded messages. Pass `--x-forwarded-for` to add
+`X-Forwarded-For: <client-ip>`; a client-supplied value is replaced so it
+cannot be used to spoof the original address.
+
+### Query strings in logs
+
+The default one-line-per-request log prints the path only, so tokens or
+session IDs in query strings do not end up in the console. Use `-vv` when
+you need the full upstream URI while debugging.
+
 ### Logging levels
 
 ```bash
@@ -179,8 +240,12 @@ Key features:
 - Upstream pooling: HTTP connections are reused per `host:port` through the SOCKS5h server
 - CONNECT support: HTTPS tunneling over HTTP/1.1 and HTTP/2, with a 5-minute idle timeout
 - Streaming: request and response bodies are forwarded as they arrive, never buffered whole, with a 60-second upstream idle timeout
+- Forwarding correctness: `Content-Length` is preserved in both directions, `Host` omits the default port, and absolute-form `https://` targets are rejected so HTTPS always uses CONNECT
 - SOCKS5h compliant: Uses domain names instead of IP addresses (privacy-friendly)
-- SOCKS5 authentication: optional RFC 1929 username/password support
+- SOCKS5 authentication: optional RFC 1929 username/password support, with a password file or environment variable
+- Client authentication: optional inbound `Proxy-Authorization: Basic` for the HTTP listener
+- Privacy: `--no-via` omits the proxy identity, query strings are not logged by default
+- Error mapping: `400` for bad client input, `502` for upstream failures, `504` for upstream timeouts
 - Robustness: bounded concurrency, graceful drain on shutdown, task panics are contained and logged
 - Optimized: LTO compilation, socket tuning, `release-size` profile
 - Cross-platform: Windows icons/manifests and console-close handling, Linux mimalloc, tested on x86_64/ARM
@@ -426,6 +491,9 @@ Request Processing
        |
        ├─> HTTP Request Forward Error
        |   └─> 502 Bad Gateway
+       |
+       ├─> Upstream Timeout (headers or handshake)
+       |   └─> 504 Gateway Timeout
        |
        └─> Tunnel idle for 5 minutes
            └─> Connection close + warning log

@@ -1,3 +1,30 @@
+26.11.13
+* (738f775) drain in-flight connections on shutdown before aborting them, and log the number drained.
+* (a204560) keep `panic = "unwind"` and report JoinError failures instead of losing a connection task silently.
+* (f61dfe6) bound HTTP/2 streams per connection (128) and add keepalive pings (30s interval, 20s timeout).
+* (92c4daa) add a 120s upstream response-header timeout and a 60s response-body idle timeout.
+* (66eab0e) trim unused crate features to reduce build time and binary size.
+* (d6823f1) pool upstream HTTP connections per `host:port` with a 90s idle timeout (8 idle per host).
+* (d31618d) add `--bind` and `--upstream-host` so the listener and SOCKS5 server can use different addresses.
+* (4b1a8de) support SOCKS5 username/password authentication (RFC 1929).
+* (20763ec) add the `Via` header and handle Windows console-close events.
+* (acf9fa8) add a size-oriented `release-size` profile.
+* (b66032e) re-style and add a usage example.
+* (07948cf) style cleanup and Windows `\r\n` line endings.
+* (0f9795a) preserve `Content-Length` in both directions, omit the default port from `Host`, and reject absolute-form `https://` targets with 400 instead of forwarding plaintext to port 443.
+* (0b59eff) map failures to typed errors: 400 for bad requests, 504 for upstream timeouts, 502 for other upstream errors.
+* (235d28f) keep query strings out of default request logs; use `-vv` for the full upstream URI.
+* (aeb8acd) show the drain window and allow a second Ctrl+C to exit immediately.
+* (fbafd13) rename the `http` module to `proxy_http` to stop shadowing the `http` crate.
+* (2d957c6) reject `--quiet` with `--verbose` through clap instead of manual validation.
+* (0cc51a6) reuse one pinned `Sleep` in `IdleTimeoutBody` with `pin-project-lite`, removing a per-frame allocation and one box.
+* (4d2367c) log through `tracing` with a non-blocking writer so a slow console cannot stall requests.
+* (f42acf6) add optional inbound `Proxy-Authorization: Basic` auth, require `--allow-non-local` to bind beyond loopback, and warn when exposed.
+* (c262ae1) add `--no-via` and opt-in `--x-forwarded-for` (client-supplied values are replaced so they cannot be spoofed).
+* (b1e2d34) read the SOCKS5 password from `--socks5-password-file` or `KARAKO_SOCKS5_PASSWORD`.
+* (040b642) copy CONNECT tunnels with `tokio::io::copy_bidirectional_with_sizes` and `tokio-io-timeout` (32 KB buffers, same 300s idle timeout).
+* (d96b4ad) flush non-blocking logs on normal shutdown.
+
 26.11.11
 * use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
 * (63c892a) replace fragile peek-based protocol detection with the `hyper-util` auto server; HTTP/1.1 and HTTP/2 now share one service.
