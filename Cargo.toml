@@ -19,6 +19,7 @@ bytes = { version = "1.12.1" }
 clap = { version = "4.6.7", features = ["derive", "wrap_help", "usage", "cargo", "suggestions", "help", "color"] }
 http = { version = "1.5.0" }
 http-body-util = { version = "0.1.5" }
+pin-project-lite = { version = "0.2" }
 hyper = { version = "1.12.0", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1.21", features = ["tokio", "server-auto", "client-legacy"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }

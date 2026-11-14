@@ -1,17 +1,23 @@
 use hyper::body::{Body, Frame, SizeHint};
-use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::time::{sleep, Sleep};
+use tokio::time::{sleep, Instant, Sleep};
 
-/// Wraps a streaming body so that a stall longer than `idle` between
-/// frames terminates the stream instead of holding a client connection
-/// (and its upstream socket) open forever.
-pub(crate) struct IdleTimeoutBody<B> {
-    inner: Pin<Box<B>>,
-    idle: Duration,
-    timer: Option<Pin<Box<Sleep>>>,
+pin_project_lite::pin_project! {
+    /// Wraps a streaming body so that a stall longer than `idle` between
+    /// frames terminates the stream instead of holding a client connection
+    /// (and its upstream socket) open forever.
+    ///
+    /// The timer is created once and reset after every frame, so polling
+    /// the body does not allocate in the hot path.
+    pub(crate) struct IdleTimeoutBody<B> {
+        #[pin]
+        inner: B,
+        #[pin]
+        timer: Sleep,
+        idle: Duration,
+    }
 }
 
 impl<B> IdleTimeoutBody<B> {
@@ -20,16 +26,16 @@ impl<B> IdleTimeoutBody<B> {
         idle: Duration,
     ) -> Self {
         Self {
-            inner: Box::pin(body),
+            inner: body,
+            timer: sleep(idle),
             idle,
-            timer: None,
         }
     }
 }
 
 impl<B> Body for IdleTimeoutBody<B>
     where
-        B: Body<Data=bytes::Bytes> + 'static,
+        B: Body<Data=bytes::Bytes>,
         B::Error: std::error::Error + Send + Sync + 'static,
 {
     type Data = bytes::Bytes;
@@ -39,35 +45,30 @@ impl<B> Body for IdleTimeoutBody<B>
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.get_mut();
-        match this.inner.as_mut().poll_frame(cx) {
+        let this = self.project();
+        match this.inner.poll_frame(cx) {
             Poll::Ready(Some(Ok(frame))) => {
                 // Any frame, data or trailers, counts as progress.
-                this.timer = Some(Box::pin(sleep(this.idle)));
+                this.timer
+                    .reset(Instant::now() + *this.idle);
                 Poll::Ready(Some(Ok(frame)))
             }
             Poll::Ready(Some(Err(error))) => {
                 Poll::Ready(Some(Err(Box::new(error))))
             }
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => {
-                let timer = this.timer.get_or_insert_with(|| {
-                    Box::pin(sleep(this.idle))
-                });
-                match timer.as_mut().poll(cx) {
-                    Poll::Ready(()) => {
-                        this.timer = None;
-                        log_warn!(
-                            "[BODY] Upstream response idle for {:?}; aborting stream",
-                            this.idle
-                        );
-                        Poll::Ready(Some(Err(Box::new(
-                            IdleTimeoutError(this.idle),
-                        ))))
-                    }
-                    Poll::Pending => Poll::Pending,
+            Poll::Pending => match this.timer.poll(cx) {
+                Poll::Ready(()) => {
+                    log_warn!(
+                        "[BODY] Upstream response idle for {:?}; aborting stream",
+                        this.idle
+                    );
+                    Poll::Ready(Some(Err(Box::new(
+                        IdleTimeoutError(*this.idle),
+                    ))))
                 }
-            }
+                Poll::Pending => Poll::Pending,
+            },
         }
     }
 
