@@ -24,6 +24,7 @@ hyper-util = { version = "0.1.21", features = ["tokio", "server-auto", "client-l
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
 tower-service = { version = "0.3.3" }
 socket2 = { version = "0.6.5", features = ["all"] }
+thiserror = { version = "2.0" }
 
 #h2 = { version = "0.4.20", features = ["stream"] }
 #hickory-resolver = { version = "0.26.3", features = ["tokio"] }

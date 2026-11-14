@@ -20,6 +20,8 @@ mod http;
 
 mod proxy;
 
+mod proxy_error;
+
 mod socket_config;
 
 mod socks5;

@@ -9,9 +9,10 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::http::{full_body, BadRequestError, BoxBody, StatusCode};
+use crate::http::{full_body, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
+use crate::proxy_error::ProxyError;
 use crate::socks5::Socks5Auth;
 use crate::upstream::UpstreamClient;
 
@@ -93,10 +94,14 @@ impl Service<Request<Incoming>> for ProxyService {
 
 fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
     let (status, message) =
-        match error.downcast_ref::<BadRequestError>() {
-            Some(bad_request) => {
-                (StatusCode::BAD_REQUEST, bad_request.0.clone())
+        match error.downcast_ref::<ProxyError>() {
+            Some(ProxyError::BadRequest(message)) => {
+                (StatusCode::BAD_REQUEST, message.clone())
             }
+            Some(ProxyError::Timeout { .. }) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream request timed out".to_string(),
+            ),
             None => (
                 StatusCode::BAD_GATEWAY,
                 "upstream request failed".to_string(),

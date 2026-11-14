@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+use crate::proxy_error::ProxyError;
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
@@ -59,22 +60,26 @@ pub async fn connect_to_socks5_server(
 ) -> Result<TcpStream> {
     let started = std::time::Instant::now();
     let addr = upstream_addr;
-    let stream =
-        timeout(SOCKS5_HANDSHAKE_TIMEOUT, TcpStream::connect(&addr))
-            .await
-            .with_context(|| {
-                format!(
-                    "Timed out connecting to SOCKS5 server at {} \
-                     after {:?}",
-                    addr, SOCKS5_HANDSHAKE_TIMEOUT
-                )
-            })?
-            .with_context(|| {
-                format!(
-                    "Failed to connect to SOCKS5 server at {}",
-                    addr
-                )
-            })?;
+    let stream = match timeout(
+        SOCKS5_HANDSHAKE_TIMEOUT,
+        TcpStream::connect(&addr),
+    )
+        .await
+    {
+        Ok(result) => result.with_context(|| {
+            format!(
+                "Failed to connect to SOCKS5 server at {}",
+                addr
+            )
+        })?,
+        Err(_) => {
+            return Err(ProxyError::Timeout {
+                phase: "connecting to the SOCKS5 server",
+                duration: SOCKS5_HANDSHAKE_TIMEOUT,
+            }
+                .into());
+        }
+    };
     configure_tokio_socket(
         &stream,
         SocketConfiguration::SOCKS_HANDSHAKE,
@@ -94,17 +99,21 @@ pub async fn establish_socks5_connection(
     auth: &Socks5Auth,
 ) -> Result<()> {
     let started = std::time::Instant::now();
-    timeout(
+    match timeout(
         SOCKS5_HANDSHAKE_TIMEOUT,
         perform_socks5_handshake(stream, host, port, auth),
     )
         .await
-        .with_context(|| {
-            format!(
-                "SOCKS5 handshake timed out after {:?} for {}:{}",
-                SOCKS5_HANDSHAKE_TIMEOUT, host, port
-            )
-        })??;
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            return Err(ProxyError::Timeout {
+                phase: "SOCKS5 handshake",
+                duration: SOCKS5_HANDSHAKE_TIMEOUT,
+            }
+                .into());
+        }
+    }
     log_info!(
         "[SOCKS5] Handshake complete for {}:{} in {:?}",
         host,

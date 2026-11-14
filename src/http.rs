@@ -4,6 +4,8 @@ use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
 use std::convert::Infallible;
 
+use crate::proxy_error::ProxyError;
+
 pub(crate) use http::{Request, Response, StatusCode};
 
 /// How long an upstream response body may go without producing a frame
@@ -49,21 +51,6 @@ pub(crate) struct Target {
     pub port: u16,
 }
 
-/// An error caused by the client sending an invalid request target.
-#[derive(Debug)]
-pub(crate) struct BadRequestError(pub String);
-
-impl std::fmt::Display for BadRequestError {
-    fn fmt(
-        &self,
-        formatter: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for BadRequestError {}
-
 /// Parses the request target, falling back to the `Host` header when the
 /// request URI only carries an origin-form path.
 ///
@@ -77,7 +64,7 @@ pub(crate) fn extract_target(
         match scheme {
             "http" => {}
             "https" => {
-                return Err(BadRequestError(
+                return Err(ProxyError::BadRequest(
                     "HTTPS request targets must use CONNECT; \
                      forward-proxy TLS is not supported"
                         .to_string(),
@@ -85,7 +72,7 @@ pub(crate) fn extract_target(
                     .into());
             }
             other => {
-                return Err(BadRequestError(format!(
+                return Err(ProxyError::BadRequest(format!(
                     "unsupported request target scheme: {}",
                     other
                 ))
@@ -105,17 +92,17 @@ pub(crate) fn extract_target(
         .headers()
         .get(http::header::HOST)
         .ok_or_else(|| {
-            BadRequestError(
+            ProxyError::BadRequest(
                 "request has neither an authority nor a Host header"
                     .to_string(),
             )
         })?;
     let host_str = host_header.to_str().map_err(|_| {
-        BadRequestError("Host header is not valid ASCII".to_string())
+        ProxyError::BadRequest("Host header is not valid ASCII".to_string())
     })?;
     let authority: http::uri::Authority =
         host_str.parse().map_err(|_| {
-            BadRequestError(format!(
+            ProxyError::BadRequest(format!(
                 "invalid Host header authority: {}",
                 host_str
             ))
@@ -284,18 +271,22 @@ pub async fn send_http_request(
             );
         }
     }
-    let response = tokio::time::timeout(
+    let response = match tokio::time::timeout(
         UPSTREAM_RESPONSE_HEADER_TIMEOUT,
         client.request(forward_req),
     )
         .await
-        .with_context(|| {
-            format!(
-                "Timed out after {:?} waiting for upstream response headers",
-                UPSTREAM_RESPONSE_HEADER_TIMEOUT
-            )
-        })?
-        .context("Failed to send HTTP/1.1 request through SOCKS5")?;
+    {
+        Ok(result) => result
+            .context("Failed to send HTTP/1.1 request through SOCKS5")?,
+        Err(_) => {
+            return Err(ProxyError::Timeout {
+                phase: "waiting for upstream response headers",
+                duration: UPSTREAM_RESPONSE_HEADER_TIMEOUT,
+            }
+                .into());
+        }
+    };
     let (parts, body) = response.into_parts();
     log_debug!(
         "[UPSTREAM] -> {} in {:?} ({} response header(s))",
