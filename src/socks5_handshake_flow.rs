@@ -4,8 +4,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::proxy_error::ProxyError;
-use crate::socket_config::{
+use crate::proxy_error_types::ProxyError;
+use crate::tcp_socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
 
@@ -170,7 +170,7 @@ async fn send_socks5_greeting(
     log_trace!(
         "[SOCKS5] Greeting out ({} bytes):\n{}",
         greeting.len(),
-        crate::logging::hex_dump(&greeting)
+        crate::logging_output_setup::hex_dump(&greeting)
     );
     Ok(())
 }
@@ -186,7 +186,7 @@ async fn receive_socks5_greeting_response(
     log_trace!(
         "[SOCKS5] Greeting in ({} bytes):\n{}",
         resp.len(),
-        crate::logging::hex_dump(&resp)
+        crate::logging_output_setup::hex_dump(&resp)
     );
     ensure!(
         resp[0] == SOCKS5_VERSION,
@@ -335,7 +335,7 @@ async fn send_socks5_connect_request(
     log_trace!(
         "[SOCKS5] CONNECT out ({} bytes):\n{}",
         connect_req.len(),
-        crate::logging::hex_dump(&connect_req)
+        crate::logging_output_setup::hex_dump(&connect_req)
     );
     stream
         .write_all(&connect_req)
@@ -365,7 +365,7 @@ async fn receive_socks5_connect_response(
     log_trace!(
         "[SOCKS5] CONNECT response header ({} bytes):\n{}",
         resp_header.len(),
-        crate::logging::hex_dump(&resp_header)
+        crate::logging_output_setup::hex_dump(&resp_header)
     );
     ensure!(
         resp_header[0] == SOCKS5_VERSION,

@@ -92,7 +92,7 @@ pub fn configure_listener_socket(listener: &TcpListener) {
 /// Returns the configured buffer sizes, falling back to the per-role
 /// defaults when the user did not override them on the command line.
 fn effective_buffers(config: &SocketConfiguration) -> (usize, usize) {
-    let tuning = crate::tuning::get();
+    let tuning = crate::runtime_buffer_tuning::get();
     (
         tuning
             .socket_recv_buffer

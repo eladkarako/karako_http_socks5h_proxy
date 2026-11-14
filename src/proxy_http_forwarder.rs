@@ -4,7 +4,7 @@ use http_body_util::{BodyExt, Empty, Full};
 use hyper::body::Incoming;
 use std::convert::Infallible;
 
-use crate::proxy_error::ProxyError;
+use crate::proxy_error_types::ProxyError;
 
 pub(crate) use http::{Request, Response, StatusCode};
 
@@ -39,7 +39,7 @@ pub(crate) fn full_body(body: impl Into<Bytes>) -> BoxBody {
 }
 
 pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
-    crate::body::IdleTimeoutBody::new(
+    crate::body_idle_timeout::IdleTimeoutBody::new(
         body,
         UPSTREAM_BODY_IDLE_TIMEOUT,
     )
@@ -289,7 +289,7 @@ fn should_forward_response_header(
 }
 
 pub async fn send_http_request(
-    client: &crate::upstream::UpstreamClient,
+    client: &crate::upstream_http_client::UpstreamClient,
     forward_req: Request<Incoming>,
     client_version: http::Version,
     forwarding: ForwardingOptions,

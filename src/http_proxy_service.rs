@@ -9,15 +9,15 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::proxy_http::{
+use crate::proxy_http_forwarder::{
     full_body, BoxBody, ForwardingOptions, StatusCode,
 };
-use crate::http1_service::handle_http1_request;
-use crate::http2_service::handle_h2_request;
-use crate::proxy_auth::{challenge, ProxyAuth};
-use crate::proxy_error::ProxyError;
-use crate::socks5::Socks5Auth;
-use crate::upstream::UpstreamClient;
+use crate::http1_request_handler::handle_http1_request;
+use crate::http2_request_handler::handle_h2_request;
+use crate::inbound_proxy_auth::{challenge, ProxyAuth};
+use crate::proxy_error_types::ProxyError;
+use crate::socks5_handshake_flow::Socks5Auth;
+use crate::upstream_http_client::UpstreamClient;
 
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
 

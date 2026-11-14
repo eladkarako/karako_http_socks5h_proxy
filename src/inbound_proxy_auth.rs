@@ -3,7 +3,7 @@ use http::header::{HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
 
-use crate::proxy_http::{full_body, BoxBody, StatusCode};
+use crate::proxy_http_forwarder::{full_body, BoxBody, StatusCode};
 
 /// Optional inbound authentication for clients of this proxy.
 ///

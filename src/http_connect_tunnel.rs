@@ -5,13 +5,13 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_io_timeout::TimeoutStream;
 
-use crate::proxy_http::{
+use crate::proxy_http_forwarder::{
     empty_body, BoxBody, ForwardingOptions,
 };
-use crate::socket_config::{
+use crate::tcp_socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
-use crate::socks5::{
+use crate::socks5_handshake_flow::{
     connect_to_socks5_server, establish_socks5_connection,
     Socks5Auth,
 };
@@ -63,7 +63,7 @@ pub async fn connect_through_socks5(
     if forwarding.add_via {
         response_builder = response_builder.header(
             http::header::VIA,
-            crate::proxy_http::via_value(client_version),
+            crate::proxy_http_forwarder::via_value(client_version),
         );
     }
     let response = response_builder
@@ -130,7 +130,7 @@ pub async fn handle_tunnel(
     target.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     let mut target = Box::pin(target);
 
-    let buffer_size = crate::tuning::get().tunnel_buffer_size;
+    let buffer_size = crate::runtime_buffer_tuning::get().tunnel_buffer_size;
     let (client_to_target, target_to_client) =
         tokio::io::copy_bidirectional_with_sizes(
             &mut client,

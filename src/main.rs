@@ -10,33 +10,33 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[macro_use]
-mod logging;
+mod logging_output_setup;
 
-mod args;
+mod command_line_args;
 
-mod body;
+mod body_idle_timeout;
 
-mod proxy_http;
+mod proxy_http_forwarder;
 
-mod proxy;
+mod http_proxy_service;
 
-mod proxy_auth;
+mod inbound_proxy_auth;
 
-mod proxy_error;
+mod proxy_error_types;
 
-mod socket_config;
+mod tcp_socket_config;
 
-mod socks5;
+mod socks5_handshake_flow;
 
-mod tunnel;
+mod http_connect_tunnel;
 
-mod tuning;
+mod runtime_buffer_tuning;
 
-mod http1_service;
+mod http1_request_handler;
 
-mod http2_service;
+mod http2_request_handler;
 
-mod upstream;
+mod upstream_http_client;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -45,7 +45,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::socket_config::{
+use crate::tcp_socket_config::{
     configure_listener_socket, configure_tokio_socket,
     SocketConfiguration,
 };
@@ -65,9 +65,9 @@ const EOL: &str = "\n";
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = args::parse_and_validate()?;
-    let _log_guard = logging::init(args.quiet, args.verbose);
-    tuning::init(tuning::Tuning {
+    let args = command_line_args::parse_and_validate()?;
+    let _log_guard = logging_output_setup::init(args.quiet, args.verbose);
+    runtime_buffer_tuning::init(runtime_buffer_tuning::Tuning {
         socket_recv_buffer: args.socket_recv_buffer_bytes(),
         socket_send_buffer: args.socket_send_buffer_bytes(),
         tunnel_buffer_size: args.tunnel_buffer_bytes(),
@@ -82,15 +82,15 @@ async fn main() -> Result<()> {
             .map(|v| format!("{} KiB", v))
             .unwrap_or_else(|| "per-role".to_string())
     );
-    let auth = socks5::Socks5Auth::new(
+    let auth = socks5_handshake_flow::Socks5Auth::new(
         args.socks5_username.clone(),
         args.socks5_password.clone(),
     );
-    let proxy_auth = proxy_auth::ProxyAuth::new(
+    let proxy_auth = inbound_proxy_auth::ProxyAuth::new(
         args.proxy_username.clone(),
         args.proxy_password.clone(),
     );
-    let forwarding = proxy_http::ForwardingOptions {
+    let forwarding = proxy_http_forwarder::ForwardingOptions {
         add_via: !args.no_via,
         add_x_forwarded_for: args.x_forwarded_for,
     };
@@ -223,7 +223,7 @@ async fn main() -> Result<()> {
         Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
     let mut connections = JoinSet::new();
     let upstream_client =
-        upstream::build(upstream_addr, auth.clone());
+        upstream_http_client::build(upstream_addr, auth.clone());
 
     loop {
         tokio::select! {
@@ -269,7 +269,7 @@ async fn main() -> Result<()> {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth, forwarding).await {
+                            if let Err(e) = http_proxy_service::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth, forwarding).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });
@@ -294,7 +294,7 @@ async fn main() -> Result<()> {
         log_warn!(
             "CONNECT tunnels have a {}s idle timeout, so long-lived tunnels \
              still active after {}s will be aborted.",
-            crate::tunnel::TUNNEL_IDLE_TIMEOUT.as_secs(),
+            crate::http_connect_tunnel::TUNNEL_IDLE_TIMEOUT.as_secs(),
             SHUTDOWN_GRACE_PERIOD.as_secs()
         );
     }
