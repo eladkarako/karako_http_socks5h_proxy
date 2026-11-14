@@ -31,7 +31,7 @@ pub struct Args {
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
     /// Only log errors
-    #[arg(short = 'q', long)]
+    #[arg(short = 'q', long, conflicts_with = "verbose")]
     pub quiet: bool,
 }
 
@@ -46,10 +46,6 @@ pub fn parse_and_validate() -> Result<Args> {
          SOCKS5 server ({})",
         listen,
         upstream
-    );
-    ensure!(
-        !(args.quiet && args.verbose > 0),
-        "--quiet and --verbose cannot be used together"
     );
     Ok(args)
 }
