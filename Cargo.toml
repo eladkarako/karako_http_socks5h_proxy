@@ -11,7 +11,7 @@ name = "karako_http_socks5h_proxy"
 readme = "README.md"
 repository = "https://github.com/eladkarako/karako_http_socks5h_proxy"
 rust-version = "1.93.0"
-version = "26.11.11"
+version = "26.11.14"
 
 [dependencies]
 anyhow = { version = "1.0.104" }

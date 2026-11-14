@@ -1,3 +1,7 @@
+26.11.14
+* (f9fecf0) add opt-in response rewriting: `--boostaler-cache` appends `stale-while-revalidate=86400`/`stale-if-error=259200` after dropping existing stale directives, `--cors-allow-all` replaces the seven permissive CORS/cross-domain headers on every method and serves built-in `CrossDomain.xml`/`ClientAccessPolicy.xml` mocks with status 200 and a recalculated `Content-Length`, and `--strip-security-headers` removes P3P, Alt-Svc, HSTS, framing, CSP and related headers in any letter case. Group connection services in `ProxyServiceConfig` to keep the handler within clippy's argument limit.
+* (fad85a6) document the response rewriting flags, stale serving, the CORS profile and policy mocks, the `CONNECT` limitation, and a manual `curl` check.
+
 26.11.13
 * (738f775) drain in-flight connections on shutdown before aborting them, and log the number drained.
 * (a204560) keep `panic = "unwind"` and report JoinError failures instead of losing a connection task silently.
