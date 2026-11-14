@@ -197,6 +197,11 @@ changes.
 
 <details><summary>more</summary>
 
+Rust auto-generated documentation, can be found in  
+https://eladkarako.github.io/karako_http_socks5h_proxy/karako_http_socks5h_proxy/index.html  
+
+<hr/>
+
 most programs will use HTTP1.1 `CONNECT`, and once the TCP tunnel established it supports any traffic  
 that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).  
 you can set firefox and edge browsers to use it as HTTP proxy, and it works very well.
