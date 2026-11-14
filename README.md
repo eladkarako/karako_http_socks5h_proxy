@@ -20,6 +20,9 @@ Options:
       --allow-non-local                    Allow binding to a non-loopback address
       --no-via                             Omit the Via header from forwarded messages
       --x-forwarded-for                    Add X-Forwarded-For with the client address
+      --tunnel-buffer-size <KIB>           Copy buffer per direction for CONNECT tunnels [default: 32]
+      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets
+      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets
   -v, --verbose...                         Increase log verbosity (use twice to dump SOCKS5 packets)
   -q, --quiet                              Only log errors
   -h, --help                               Print help
@@ -206,6 +209,27 @@ forwarded messages. Pass `--x-forwarded-for` to add
 `X-Forwarded-For: <client-ip>`; a client-supplied value is replaced so it
 cannot be used to spoof the original address.
 
+### Buffer tuning
+
+CONNECT tunnels copy with a 32 KiB buffer per direction by default:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 --tunnel-buffer-size 64
+```
+
+Socket buffers keep per-role defaults: 256 KiB for inbound and HTTP
+request sockets, 64 KiB for the SOCKS5 handshake, and 512 KiB for CONNECT
+tunnels. Override all of them for a high-throughput tunnel:
+
+```bash
+karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --tunnel-buffer-size 64 --socket-recv-buffer 512 --socket-send-buffer 512
+```
+
+Sizes are in KiB. `--socket-recv-buffer` and `--socket-send-buffer` accept
+`1..1048576`; `--tunnel-buffer-size` accepts `1..1024`. The effective
+values are logged with `-v`.
+
 ### Query strings in logs
 
 The default one-line-per-request log prints the path only, so tokens or
@@ -245,6 +269,7 @@ Key features:
 - SOCKS5 authentication: optional RFC 1929 username/password support, with a password file or environment variable
 - Client authentication: optional inbound `Proxy-Authorization: Basic` for the HTTP listener
 - Privacy: `--no-via` omits the proxy identity, query strings are not logged by default
+- Tunable buffers: `--tunnel-buffer-size`, `--socket-recv-buffer`, `--socket-send-buffer`
 - Error mapping: `400` for bad client input, `502` for upstream failures, `504` for upstream timeouts
 - Robustness: bounded concurrency, graceful drain on shutdown, task panics are contained and logged
 - Optimized: LTO compilation, socket tuning, `release-size` profile

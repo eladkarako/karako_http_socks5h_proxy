@@ -24,6 +24,7 @@
 * (b1e2d34) read the SOCKS5 password from `--socks5-password-file` or `KARAKO_SOCKS5_PASSWORD`.
 * (040b642) copy CONNECT tunnels with `tokio::io::copy_bidirectional_with_sizes` and `tokio-io-timeout` (32 KB buffers, same 300s idle timeout).
 * (d96b4ad) flush non-blocking logs on normal shutdown.
+* (c14453d) expose tunnel copy size and global `SO_RCVBUF`/`SO_SNDBUF` overrides through `--tunnel-buffer-size`, `--socket-recv-buffer` and `--socket-send-buffer`.
 
 26.11.11
 * use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
