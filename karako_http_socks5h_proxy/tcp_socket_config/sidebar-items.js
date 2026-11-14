@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_windows_optimizations","configure_listener_socket","configure_tokio_socket","effective_buffers","report"],"struct":["SocketConfiguration"]};

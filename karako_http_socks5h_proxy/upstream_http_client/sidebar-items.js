@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POOL_IDLE_TIMEOUT","POOL_MAX_IDLE_PER_HOST"],"fn":["build","default_port"],"struct":["SocksConnector"],"type":["UpstreamClient"]};

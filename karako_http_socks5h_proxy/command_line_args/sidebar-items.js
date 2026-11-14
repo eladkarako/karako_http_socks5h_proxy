@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BUFFER_RANGE_HINT","MAX_BUFFER_KIB","MIN_BUFFER_KIB"],"fn":["parse_and_validate","resolve_socks5_password"],"struct":["Args"]};

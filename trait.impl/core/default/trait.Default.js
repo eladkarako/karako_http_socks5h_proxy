@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["karako_http_socks5h_proxy",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.100.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"karako_http_socks5h_proxy/inbound_proxy_auth/struct.ProxyAuth.html\" title=\"struct karako_http_socks5h_proxy::inbound_proxy_auth::ProxyAuth\">ProxyAuth</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.100.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"karako_http_socks5h_proxy/response_header_policy/struct.ResponsePolicy.html\" title=\"struct karako_http_socks5h_proxy::response_header_policy::ResponsePolicy\">ResponsePolicy</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.100.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"karako_http_socks5h_proxy/socks5_handshake_flow/struct.Socks5Auth.html\" title=\"struct karako_http_socks5h_proxy::socks5_handshake_flow::Socks5Auth\">Socks5Auth</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.100.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"karako_http_socks5h_proxy/runtime_buffer_tuning/struct.Tuning.html\" title=\"struct karako_http_socks5h_proxy::runtime_buffer_tuning::Tuning\">Tuning</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1436]}
