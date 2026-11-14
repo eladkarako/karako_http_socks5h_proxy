@@ -21,8 +21,8 @@ Options:
       --no-via                             Omit the Via header from forwarded messages
       --x-forwarded-for                    Add X-Forwarded-For with the client address
       --tunnel-buffer-size <KIB>           Copy buffer size per direction for CONNECT tunnels, in KiB [default: 32]
-      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets, in KiB
-      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets, in KiB
+      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets, in KiB (default: 64-512 by role)
+      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets, in KiB (default: 64-512 by role)
   -v, --verbose...                         Increase log verbosity
   -q, --quiet                              Only log errors
   -h, --help                               Print help (see more with '--help')
@@ -222,8 +222,8 @@ CONNECT tunnels copy with a 32 KiB buffer per direction by default:
 karako_http_socks5h_proxy -p 18765 -u 9150 --tunnel-buffer-size 64
 ```
 
-Socket buffers keep per-role defaults: 256 KiB for inbound and HTTP
-request sockets, 64 KiB for the SOCKS5 handshake, and 512 KiB for CONNECT
+Socket buffers keep per-role defaults: 64 KiB for the SOCKS5 handshake,
+256 KiB for inbound and HTTP request sockets, and 512 KiB for CONNECT
 tunnels. Override all of them for a high-throughput tunnel:
 
 ```bash
@@ -231,9 +231,16 @@ karako_http_socks5h_proxy -p 18765 -u 9150 \
   --tunnel-buffer-size 64 --socket-recv-buffer 512 --socket-send-buffer 512
 ```
 
-Sizes are in KiB. `--socket-recv-buffer` and `--socket-send-buffer` accept
-`1..1048576`; `--tunnel-buffer-size` accepts `1..1024`. The effective
-values are logged with `-v`.
+Sizes are in KiB. Every buffer option accepts **5 to 10240 KiB**
+(5 KiB to 10 MiB); values outside that range are rejected at startup.
+The defaults are:
+
+| Option | Default |
+|---|---|
+| `--tunnel-buffer-size` | 32 KiB per copy direction |
+| `--socket-recv-buffer` / `--socket-send-buffer` | per role: 64 KiB handshake, 256 KiB inbound/HTTP, 512 KiB tunnel |
+
+The effective values are logged with `-v`.
 
 ### Query strings in logs
 

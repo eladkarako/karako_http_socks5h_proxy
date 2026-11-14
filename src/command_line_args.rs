@@ -14,6 +14,16 @@ use clap::Parser;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
+/// Smallest accepted buffer size, in KiB.
+const MIN_BUFFER_KIB: u32 = 5;
+
+/// Largest accepted buffer size, in KiB (10 MiB).
+const MAX_BUFFER_KIB: u32 = 10 * 1024;
+
+/// Human-readable form of the accepted buffer range, following
+/// "must be between".
+const BUFFER_RANGE_HINT: &str = "5 and 10240 KiB (5 KiB to 10 MiB)";
+
 /// A forward proxy that carries HTTP traffic over an upstream SOCKS5h
 /// server.
 ///
@@ -139,22 +149,28 @@ pub struct Args {
     ///
     /// Each direction of a tunnel gets its own buffer of this size. The
     /// default suits most links; raise it for high-bandwidth tunnels on
-    /// high-latency paths.
+    /// high-latency paths. Accepted range: 5 to 10240 KiB (5 KiB to
+    /// 10 MiB).
     #[arg(long, value_name = "KIB", default_value_t = 32)]
     pub tunnel_buffer_size: u16,
 
-    /// Override SO_RCVBUF for all sockets, in KiB
+    /// Override SO_RCVBUF for all sockets, in KiB (default: 64-512 by role)
     ///
     /// Applies to the listener, SOCKS5 handshakes, upstream HTTP
-    /// connections, and tunnels. When omitted, each role keeps its own
-    /// default (64 KiB for handshakes up to 512 KiB for tunnels).
+    /// connections, and tunnels. Without this flag each role keeps its
+    /// own default: 64 KiB for handshakes, 256 KiB for inbound and HTTP
+    /// request sockets, and 512 KiB for CONNECT tunnels. Accepted range:
+    /// 5 to 10240 KiB (5 KiB to 10 MiB).
     #[arg(long, value_name = "KIB")]
     pub socket_recv_buffer: Option<u32>,
 
-    /// Override SO_SNDBUF for all sockets, in KiB
+    /// Override SO_SNDBUF for all sockets, in KiB (default: 64-512 by role)
     ///
-    /// Same coverage as `--socket-recv-buffer`. The kernel may clamp the
-    /// requested value; the effective size is logged with `-v`.
+    /// Same coverage and defaults as `--socket-recv-buffer`: 64 KiB for
+    /// handshakes, 256 KiB for inbound and HTTP request sockets, and
+    /// 512 KiB for CONNECT tunnels. Accepted range: 5 to 10240 KiB
+    /// (5 KiB to 10 MiB). The kernel may clamp the requested value; the
+    /// effective size is logged with `-v`.
     #[arg(long, value_name = "KIB")]
     pub socket_send_buffer: Option<u32>,
 
@@ -198,19 +214,23 @@ pub fn parse_and_validate() -> Result<Args> {
         args.bind
     );
     ensure!(
-        (1..=1024).contains(&args.tunnel_buffer_size),
-        "--tunnel-buffer-size must be between 1 and 1024 KiB"
+        (MIN_BUFFER_KIB..=MAX_BUFFER_KIB)
+            .contains(&u32::from(args.tunnel_buffer_size)),
+        "--tunnel-buffer-size must be between {}",
+        BUFFER_RANGE_HINT
     );
     if let Some(size) = args.socket_recv_buffer {
         ensure!(
-            (1..=1_048_576).contains(&size),
-            "--socket-recv-buffer must be between 1 and 1048576 KiB"
+            (MIN_BUFFER_KIB..=MAX_BUFFER_KIB).contains(&size),
+            "--socket-recv-buffer must be between {}",
+            BUFFER_RANGE_HINT
         );
     }
     if let Some(size) = args.socket_send_buffer {
         ensure!(
-            (1..=1_048_576).contains(&size),
-            "--socket-send-buffer must be between 1 and 1048576 KiB"
+            (MIN_BUFFER_KIB..=MAX_BUFFER_KIB).contains(&size),
+            "--socket-send-buffer must be between {}",
+            BUFFER_RANGE_HINT
         );
     }
     Ok(args)
