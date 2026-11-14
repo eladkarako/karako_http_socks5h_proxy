@@ -29,6 +29,7 @@
 * (fb3aca6) give every command-line option a short and long doc comment so `-h` stays compact and `--help` explains ports, password precedence, the non-loopback guard and buffer units.
 * (7323fab) add module docs, item rustdoc and inline notes to the forwarding, HTTP/1.1, HTTP/2, CONNECT, SOCKS5, body-timeout and error modules.
 * (051a96b) document the entry point, connection service, inbound auth, socket roles, buffer tuning, logging and upstream client, including field-level rustdoc for the configuration types.
+* (7cc9017) widen `--tunnel-buffer-size`, `--socket-recv-buffer` and `--socket-send-buffer` to 5-10240 KiB (5 KiB to 10 MiB) and state their defaults and range in `-h`, `--help` and the README.
 
 26.11.11
 * use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
