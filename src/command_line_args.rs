@@ -145,6 +145,38 @@ pub struct Args {
     #[arg(long)]
     pub x_forwarded_for: bool,
 
+    /// Extend Cache-Control with stale-while-revalidate and stale-if-error
+    ///
+    /// Removes any existing `stale-while-revalidate`/`stale-if-error`
+    /// directives, then appends `stale-while-revalidate=86400` (one day)
+    /// and `stale-if-error=259200` (three days) to every response. A
+    /// homage to the historic "Boostaler" browser extension, which aimed
+    /// to keep pages usable while a site was slow or down.
+    #[arg(long, visible_alias = "stale-cache")]
+    pub boostaler_cache: bool,
+
+    /// Add permissive CORS headers to every response
+    ///
+    /// Replaces existing values for Access-Control-Allow-Methods,
+    /// -Origin, -Headers, -Allow-Credentials, Expose-Headers,
+    /// Timing-Allow-Origin and X-Permitted-Cross-Domain-Policies, on
+    /// every method including non-OPTIONS. Any path ending in
+    /// `CrossDomain.xml` or `ClientAccessPolicy.xml` (any letter case)
+    /// receives a synthetic 200 policy file instead of the upstream
+    /// response. CONNECT tunnels carry opaque TLS after the proxy's
+    /// 200, so headers inside the tunnel cannot be changed.
+    #[arg(long, visible_alias = "cors")]
+    pub cors_allow_all: bool,
+
+    /// Remove CSP and related security headers from every response
+    ///
+    /// Strips P3P, Alt-Svc, Strict-Transport-Security, X-Frame-Options,
+    /// X-XSS-Protection, X-Content-Type-Options, Content-Security-Policy,
+    /// Referrer-Policy and Public-Key-Pins-Report-Only, matching names in
+    /// any letter case.
+    #[arg(long, visible_alias = "strip-csp")]
+    pub strip_security_headers: bool,
+
     /// Copy buffer size per direction for CONNECT tunnels, in KiB
     ///
     /// Each direction of a tunnel gets its own buffer of this size. The

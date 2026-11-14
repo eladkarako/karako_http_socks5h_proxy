@@ -35,6 +35,8 @@ mod inbound_proxy_auth;
 
 mod proxy_error_types;
 
+mod response_header_policy;
+
 mod tcp_socket_config;
 
 mod socks5_handshake_flow;
@@ -106,6 +108,11 @@ async fn main() -> Result<()> {
     let forwarding = proxy_http_forwarder::ForwardingOptions {
         add_via: !args.no_via,
         add_x_forwarded_for: args.x_forwarded_for,
+    };
+    let response_policy = response_header_policy::ResponsePolicy {
+        boostaler_cache: args.boostaler_cache,
+        cors_allow_all: args.cors_allow_all,
+        strip_security_headers: args.strip_security_headers,
     };
 
     let addr = std::net::SocketAddr::new(args.bind, args.http_port);
@@ -239,6 +246,14 @@ async fn main() -> Result<()> {
     let mut connections = JoinSet::new();
     let upstream_client =
         upstream_http_client::build(upstream_addr, auth.clone());
+    let service_config = http_proxy_service::ProxyServiceConfig {
+        upstream_addr,
+        client: upstream_client,
+        auth,
+        inbound_auth: proxy_auth,
+        forwarding,
+        response_policy,
+    };
 
     loop {
         // `join_next` doubles as a way to reap finished tasks while
@@ -280,14 +295,12 @@ async fn main() -> Result<()> {
                             &socket,
                             SocketConfiguration::CLIENT_INBOUND,
                         );
-                        let client = upstream_client.clone();
-                        let auth = auth.clone();
-                        let proxy_auth = proxy_auth.clone();
+                        let config = service_config.clone();
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = http_proxy_service::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth, forwarding).await {
+                            if let Err(e) = http_proxy_service::handle_client_connection(socket, client_addr, config).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });

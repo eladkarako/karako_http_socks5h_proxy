@@ -24,6 +24,7 @@ use crate::http1_request_handler::handle_http1_request;
 use crate::http2_request_handler::handle_h2_request;
 use crate::inbound_proxy_auth::{challenge, ProxyAuth};
 use crate::proxy_error_types::ProxyError;
+use crate::response_header_policy::{self, ResponsePolicy};
 use crate::socks5_handshake_flow::Socks5Auth;
 use crate::upstream_http_client::UpstreamClient;
 
@@ -45,6 +46,28 @@ const H2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// connection.
 const H2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Per-connection services and policies.
+///
+/// Grouping them keeps [`handle_client_connection`] small and lets the
+/// accept loop build the value once, then clone it per connection. The
+/// upstream client is a pool handle, so cloning is cheap and all clones
+/// share the same connections.
+#[derive(Clone)]
+pub struct ProxyServiceConfig {
+    /// SOCKS5 server every forwarded request is sent through.
+    pub upstream_addr: SocketAddr,
+    /// Pooled upstream HTTP client.
+    pub client: UpstreamClient,
+    /// Upstream SOCKS5 credentials.
+    pub auth: Socks5Auth,
+    /// Inbound client authentication policy.
+    pub inbound_auth: ProxyAuth,
+    /// Which optional headers to add.
+    pub forwarding: ForwardingOptions,
+    /// Which response rewrites to apply.
+    pub response_policy: ResponsePolicy,
+}
+
 /// Cloneable request handler for one accepted client connection.
 ///
 /// The upstream client is a pool handle, so cloning is cheap and all
@@ -63,6 +86,8 @@ struct ProxyService {
     inbound_auth: ProxyAuth,
     /// Which optional headers to add.
     forwarding: ForwardingOptions,
+    /// Which response rewrites to apply.
+    response_policy: ResponsePolicy,
 }
 
 impl Service<Request<Incoming>> for ProxyService {
@@ -86,46 +111,67 @@ impl Service<Request<Incoming>> for ProxyService {
         let auth = self.auth.clone();
         let inbound_auth = self.inbound_auth.clone();
         let forwarding = self.forwarding;
+        let response_policy = self.response_policy;
         Box::pin(async move {
-            if !inbound_auth.is_authorized(&req) {
+            // Cross-domain mocks only exist when permissive CORS is on.
+            // Resolving them before dispatch avoids cloning or moving the
+            // request twice.
+            let cross_domain = if response_policy.cors_allow_all {
+                response_header_policy::cross_domain_mock(
+                    req.method(),
+                    req.uri(),
+                )
+            } else {
+                None
+            };
+            let mut response = if !inbound_auth.is_authorized(&req) {
                 log_warn!(
                     "[AUTH] Rejecting unauthenticated request from {}",
                     client_addr
                 );
-                return Ok(challenge());
-            }
-            let result = match req.version() {
-                hyper::Version::HTTP_2 => {
-                    handle_h2_request(
-                        req,
-                        upstream_addr,
-                        client_addr,
-                        client,
-                        auth,
-                        forwarding,
-                    )
-                        .await
-                }
-                _ => {
-                    handle_http1_request(
-                        req,
-                        upstream_addr,
-                        client_addr,
-                        client,
-                        auth,
-                        forwarding,
-                    )
-                        .await
-                }
-            };
-            Ok(result.unwrap_or_else(|e| {
-                log_error!(
-                    "Request handling error from {}: {:#}",
-                    client_addr,
-                    e
+                challenge()
+            } else if let Some(body) = cross_domain {
+                log_info!(
+                    "[CORS] Serving synthetic cross-domain policy for {}",
+                    req.uri().path()
                 );
-                error_response(&e)
-            }))
+                response_header_policy::cross_domain_response(body)
+            } else {
+                let result = match req.version() {
+                    hyper::Version::HTTP_2 => {
+                        handle_h2_request(
+                            req,
+                            upstream_addr,
+                            client_addr,
+                            client,
+                            auth,
+                            forwarding,
+                        )
+                            .await
+                    }
+                    _ => {
+                        handle_http1_request(
+                            req,
+                            upstream_addr,
+                            client_addr,
+                            client,
+                            auth,
+                            forwarding,
+                        )
+                            .await
+                    }
+                };
+                result.unwrap_or_else(|e| {
+                    log_error!(
+                        "Request handling error from {}: {:#}",
+                        client_addr,
+                        e
+                    );
+                    error_response(&e)
+                })
+            };
+            response_policy.apply(&mut response);
+            Ok(response)
         })
     }
 }
@@ -164,12 +210,16 @@ fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
 pub async fn handle_client_connection(
     socket: TcpStream,
     addr: SocketAddr,
-    upstream_addr: SocketAddr,
-    client: UpstreamClient,
-    auth: Socks5Auth,
-    inbound_auth: ProxyAuth,
-    forwarding: ForwardingOptions,
+    config: ProxyServiceConfig,
 ) -> Result<()> {
+    let ProxyServiceConfig {
+        upstream_addr,
+        client,
+        auth,
+        inbound_auth,
+        forwarding,
+        response_policy,
+    } = config;
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
     let service = ProxyService {
@@ -179,6 +229,7 @@ pub async fn handle_client_connection(
         auth,
         inbound_auth,
         forwarding,
+        response_policy,
     };
     let mut builder = hyper_util::server::conn::auto::Builder::new(
         hyper_util::rt::TokioExecutor::new(),
