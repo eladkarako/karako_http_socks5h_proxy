@@ -20,7 +20,7 @@ use crate::socks5::{
 
 /// How long a tunnel may sit without any traffic in either direction
 /// before it is torn down.
-const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+pub(crate) const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 const TUNNEL_BUFFER_SIZE: usize = 16 * 1024;
 

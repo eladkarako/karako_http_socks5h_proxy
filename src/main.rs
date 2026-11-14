@@ -108,12 +108,23 @@ async fn main() -> Result<()> {
     let shutdown = Arc::new(tokio::sync::Notify::new());
     let shutdown_clone = shutdown.clone();
     tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
+        if tokio::signal::ctrl_c().await.is_err() {
+            log_warn!("Failed to listen for Ctrl+C");
+            return;
+        }
         log_info!(
-            "{}Ctrl+C received, shutting down gracefully...",
+            "{}Ctrl+C received, draining connections... \
+             (press Ctrl+C again to exit immediately)",
             EOL
         );
         shutdown_clone.notify_one();
+        if tokio::signal::ctrl_c().await.is_ok() {
+            log_warn!(
+                "{}Second Ctrl+C received, exiting immediately.",
+                EOL
+            );
+            std::process::exit(130);
+        }
     });
 
     #[cfg(unix)]
@@ -231,10 +242,18 @@ async fn main() -> Result<()> {
 
     let active = connections.len();
     log_info!(
-        "Stopped accepting connections; draining {} active connection(s) (up to {}s).",
+        "Stopped accepting connections; draining {} active connection(s) for up to {}s.",
         active,
         SHUTDOWN_GRACE_PERIOD.as_secs()
     );
+    if active > 0 {
+        log_warn!(
+            "CONNECT tunnels have a {}s idle timeout, so long-lived tunnels \
+             still active after {}s will be aborted.",
+            crate::tunnel::TUNNEL_IDLE_TIMEOUT.as_secs(),
+            SHUTDOWN_GRACE_PERIOD.as_secs()
+        );
+    }
 
     // Give in-flight requests and tunnels a bounded chance to finish
     // instead of cutting them mid-stream.
