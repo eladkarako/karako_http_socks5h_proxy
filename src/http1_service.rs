@@ -24,7 +24,7 @@ pub(crate) async fn handle_http1_request(
     log_info!(
         "[HTTP/1.1] {} {} (host: {}:{}) from {}",
         method,
-        uri,
+        http::loggable_target(&uri),
         host,
         port,
         client_addr
@@ -61,14 +61,14 @@ pub(crate) async fn handle_http1_request(
         Ok(response) => log_debug!(
             "[HTTP/1.1] {} {} -> {} in {:?}",
             method,
-            uri,
+            http::loggable_target(&uri),
             response.status(),
             started.elapsed()
         ),
         Err(error) => log_debug!(
             "[HTTP/1.1] {} {} failed in {:?}: {:#}",
             method,
-            uri,
+            http::loggable_target(&uri),
             started.elapsed(),
             error
         ),

@@ -127,6 +127,18 @@ fn default_port(
     }
 }
 
+/// Request target that is safe to print at default verbosity: the path
+/// without the query string, or the authority for CONNECT-style targets.
+pub(crate) fn loggable_target(uri: &hyper::Uri) -> &str {
+    if uri.path().is_empty() {
+        uri.authority()
+            .map(|authority| authority.as_str())
+            .unwrap_or("/")
+    } else {
+        uri.path()
+    }
+}
+
 /// Value used for the RFC 9110 `Via` header.
 ///
 /// The version reflects the protocol of the message that entered the
@@ -259,9 +271,10 @@ pub async fn send_http_request(
     log_debug!(
         "[UPSTREAM] {} {} ({} header(s))",
         forward_req.method(),
-        forward_req.uri(),
+        loggable_target(forward_req.uri()),
         forward_req.headers().len()
     );
+    log_trace!("[UPSTREAM] Full target: {}", forward_req.uri());
     if crate::logging::enabled(crate::logging::Level::Trace) {
         for (name, value) in forward_req.headers().iter() {
             log_trace!(

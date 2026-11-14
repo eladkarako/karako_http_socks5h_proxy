@@ -24,7 +24,7 @@ pub(crate) async fn handle_h2_request(
     log_info!(
         "[HTTP/2] {} {} (host: {}:{}) from {}",
         method,
-        uri,
+        http::loggable_target(&uri),
         host,
         port,
         client_addr
@@ -61,14 +61,14 @@ pub(crate) async fn handle_h2_request(
         Ok(response) => log_debug!(
             "[HTTP/2] {} {} -> {} in {:?}",
             method,
-            uri,
+            http::loggable_target(&uri),
             response.status(),
             started.elapsed()
         ),
         Err(error) => log_debug!(
             "[HTTP/2] {} {} failed in {:?}: {:#}",
             method,
-            uri,
+            http::loggable_target(&uri),
             started.elapsed(),
             error
         ),
