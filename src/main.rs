@@ -73,6 +73,10 @@ async fn main() -> Result<()> {
         args.proxy_username.clone(),
         args.proxy_password.clone(),
     );
+    let forwarding = proxy_http::ForwardingOptions {
+        add_via: !args.no_via,
+        add_x_forwarded_for: args.x_forwarded_for,
+    };
 
     let addr = std::net::SocketAddr::new(args.bind, args.http_port);
     let upstream_addr = std::net::SocketAddr::new(
@@ -248,7 +252,7 @@ async fn main() -> Result<()> {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth).await {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth, forwarding).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });

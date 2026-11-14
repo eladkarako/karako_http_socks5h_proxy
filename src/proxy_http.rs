@@ -139,6 +139,15 @@ pub(crate) fn loggable_target(uri: &hyper::Uri) -> &str {
     }
 }
 
+/// Controls optional headers added by the proxy.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ForwardingOptions {
+    /// Add the RFC 9110 `Via` header to forwarded messages.
+    pub add_via: bool,
+    /// Add `X-Forwarded-For` with the immediate client address.
+    pub add_x_forwarded_for: bool,
+}
+
 /// Value used for the RFC 9110 `Via` header.
 ///
 /// The version reflects the protocol of the message that entered the
@@ -159,6 +168,8 @@ pub fn build_forward_request(
     host: &str,
     port: u16,
     req: Request<Incoming>,
+    client_addr: std::net::SocketAddr,
+    forwarding: ForwardingOptions,
 ) -> Result<Request<Incoming>> {
     let path_query = uri
         .path_and_query()
@@ -181,6 +192,13 @@ pub fn build_forward_request(
         if name == "host" {
             continue;
         }
+        // When we add X-Forwarded-For ourselves, drop the client-supplied
+        // value so it cannot be used to spoof the original address.
+        if forwarding.add_x_forwarded_for
+            && name.eq_ignore_ascii_case("x-forwarded-for")
+        {
+            continue;
+        }
         if is_hop_by_hop(name, &connection_tokens) {
             log_trace!(
                 "[HTTP] Dropping hop-by-hop header: {}",
@@ -194,8 +212,16 @@ pub fn build_forward_request(
         http::header::HOST,
         host_header_value(host, port),
     );
-    forward_req = forward_req
-        .header(http::header::VIA, via_value(client_version));
+    if forwarding.add_via {
+        forward_req = forward_req
+            .header(http::header::VIA, via_value(client_version));
+    }
+    if forwarding.add_x_forwarded_for {
+        forward_req = forward_req.header(
+            "x-forwarded-for",
+            client_addr.ip().to_string(),
+        );
+    }
     forward_req
         .body(body)
         .context("Failed to build forward request")
@@ -266,6 +292,7 @@ pub async fn send_http_request(
     client: &crate::upstream::UpstreamClient,
     forward_req: Request<Incoming>,
     client_version: http::Version,
+    forwarding: ForwardingOptions,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     log_debug!(
@@ -318,8 +345,10 @@ pub async fn send_http_request(
             response_builder = response_builder.header(name, value);
         }
     }
-    response_builder = response_builder
-        .header(http::header::VIA, via_value(client_version));
+    if forwarding.add_via {
+        response_builder = response_builder
+            .header(http::header::VIA, via_value(client_version));
+    }
     response_builder
         .body(box_incoming(body))
         .context("Failed to build response")

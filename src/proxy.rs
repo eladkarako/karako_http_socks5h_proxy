@@ -9,7 +9,9 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::proxy_http::{full_body, BoxBody, StatusCode};
+use crate::proxy_http::{
+    full_body, BoxBody, ForwardingOptions, StatusCode,
+};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
 use crate::proxy_auth::{challenge, ProxyAuth};
@@ -38,6 +40,7 @@ struct ProxyService {
     client: UpstreamClient,
     auth: Socks5Auth,
     inbound_auth: ProxyAuth,
+    forwarding: ForwardingOptions,
 }
 
 impl Service<Request<Incoming>> for ProxyService {
@@ -60,6 +63,7 @@ impl Service<Request<Incoming>> for ProxyService {
         let client = self.client.clone();
         let auth = self.auth.clone();
         let inbound_auth = self.inbound_auth.clone();
+        let forwarding = self.forwarding;
         Box::pin(async move {
             if !inbound_auth.is_authorized(&req) {
                 log_warn!(
@@ -76,6 +80,7 @@ impl Service<Request<Incoming>> for ProxyService {
                         client_addr,
                         client,
                         auth,
+                        forwarding,
                     )
                         .await
                 }
@@ -86,6 +91,7 @@ impl Service<Request<Incoming>> for ProxyService {
                         client_addr,
                         client,
                         auth,
+                        forwarding,
                     )
                         .await
                 }
@@ -131,6 +137,7 @@ pub async fn handle_client_connection(
     client: UpstreamClient,
     auth: Socks5Auth,
     inbound_auth: ProxyAuth,
+    forwarding: ForwardingOptions,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
@@ -140,6 +147,7 @@ pub async fn handle_client_connection(
         client,
         auth,
         inbound_auth,
+        forwarding,
     };
     let mut builder = hyper_util::server::conn::auto::Builder::new(
         hyper_util::rt::TokioExecutor::new(),

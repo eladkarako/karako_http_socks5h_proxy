@@ -9,7 +9,9 @@ use tokio::io::{
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::proxy_http::{empty_body, BoxBody};
+use crate::proxy_http::{
+    empty_body, BoxBody, ForwardingOptions,
+};
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
@@ -33,6 +35,7 @@ pub async fn connect_through_socks5(
     port: u16,
     upstream_addr: std::net::SocketAddr,
     auth: Socks5Auth,
+    forwarding: ForwardingOptions,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     let client_version = req.version();
@@ -61,12 +64,15 @@ pub async fn connect_through_socks5(
     // A 2xx response to CONNECT switches both HTTP/1.1 and HTTP/2 to a
     // raw tunnel, so no upgrade headers are needed (and hop-by-hop
     // headers must not be sent at all).
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(
+    let mut response_builder =
+        Response::builder().status(StatusCode::OK);
+    if forwarding.add_via {
+        response_builder = response_builder.header(
             http::header::VIA,
             crate::proxy_http::via_value(client_version),
-        )
+        );
+    }
+    let response = response_builder
         .body(empty_body())
         .context("Failed to build CONNECT response")?;
     tokio::spawn(async move {

@@ -36,6 +36,12 @@ pub struct Args {
     /// Allow binding to a non-loopback address (exposes the proxy)
     #[arg(long)]
     pub allow_non_local: bool,
+    /// Omit the Via header from forwarded requests and responses
+    #[arg(long)]
+    pub no_via: bool,
+    /// Add X-Forwarded-For with the client address
+    #[arg(long)]
+    pub x_forwarded_for: bool,
     /// Increase log verbosity (use twice to dump SOCKS5 packets)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,

@@ -3,6 +3,7 @@ use hyper::body::{Body, Incoming};
 
 use crate::proxy_http::{
     self, build_forward_request, extract_target, BoxBody,
+    ForwardingOptions,
 };
 use crate::socks5::Socks5Auth;
 use crate::upstream::UpstreamClient;
@@ -13,6 +14,7 @@ pub(crate) async fn handle_http1_request(
     client_addr: std::net::SocketAddr,
     client: UpstreamClient,
     auth: Socks5Auth,
+    forwarding: ForwardingOptions,
 ) -> anyhow::Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
     let method = req.method().clone();
@@ -42,17 +44,25 @@ pub(crate) async fn handle_http1_request(
                 port,
                 upstream_addr,
                 auth,
+                forwarding,
             )
                 .await
         }
         _ => {
             let forward_req = build_forward_request(
-                &method, &uri, &host, port, req,
+                &method,
+                &uri,
+                &host,
+                port,
+                req,
+                client_addr,
+                forwarding,
             )?;
             proxy_http::send_http_request(
                 &client,
                 forward_req,
                 version,
+                forwarding,
             )
                 .await
         }
