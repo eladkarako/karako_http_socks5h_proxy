@@ -26,13 +26,13 @@ pub(crate) type BoxBody = http_body_util::combinators::UnsyncBoxBody<
 
 pub(crate) fn empty_body() -> BoxBody {
     Empty::<Bytes>::new()
-        .map_err(|never: Infallible| boxed_error(never))
+        .map_err(|never: Infallible| match never {})
         .boxed_unsync()
 }
 
 pub(crate) fn full_body(body: impl Into<Bytes>) -> BoxBody {
     Full::new(body.into())
-        .map_err(|never: Infallible| boxed_error(never))
+        .map_err(|never: Infallible| match never {})
         .boxed_unsync()
 }
 
@@ -42,12 +42,6 @@ pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
         UPSTREAM_BODY_IDLE_TIMEOUT,
     )
         .boxed_unsync()
-}
-
-fn boxed_error(
-    error: impl std::error::Error + Send + Sync + 'static
-) -> Box<dyn std::error::Error + Send + Sync> {
-    Box::new(error)
 }
 
 pub(crate) struct Target {
@@ -79,6 +73,26 @@ pub(crate) fn extract_target(
     req: &Request<Incoming>
 ) -> Result<Target> {
     let uri = req.uri();
+    if let Some(scheme) = uri.scheme_str() {
+        match scheme {
+            "http" => {}
+            "https" => {
+                return Err(BadRequestError(
+                    "HTTPS request targets must use CONNECT; \
+                     forward-proxy TLS is not supported"
+                        .to_string(),
+                )
+                    .into());
+            }
+            other => {
+                return Err(BadRequestError(format!(
+                    "unsupported request target scheme: {}",
+                    other
+                ))
+                    .into());
+            }
+        }
+    }
     if let Some(authority) = uri.authority() {
         return Ok(Target {
             host: authority.host().to_string(),
@@ -162,7 +176,10 @@ pub fn build_forward_request(
         .version(hyper::Version::HTTP_11);
     for (name, value) in parts.headers.iter() {
         let name = name.as_str();
-        if name == "host" || name == "content-length" {
+        // `Host` is rebuilt for the upstream authority below. Every other
+        // end-to-end header, including `Content-Length`, is passed through
+        // unchanged because the body is forwarded verbatim.
+        if name == "host" {
             continue;
         }
         if is_hop_by_hop(name, &connection_tokens) {
@@ -174,13 +191,28 @@ pub fn build_forward_request(
         }
         forward_req = forward_req.header(name, value);
     }
-    forward_req = forward_req
-        .header(http::header::HOST, format!("{}:{}", host, port));
+    forward_req = forward_req.header(
+        http::header::HOST,
+        host_header_value(host, port),
+    );
     forward_req = forward_req
         .header(http::header::VIA, via_value(client_version));
     forward_req
         .body(body)
         .context("Failed to build forward request")
+}
+
+fn host_header_value(
+    host: &str,
+    port: u16,
+) -> String {
+    // `host` already carries brackets for IPv6 literals. Default ports are
+    // omitted because some origin servers match on the bare host name.
+    if port == 80 {
+        host.to_string()
+    } else {
+        format!("{}:{}", host, port)
+    }
 }
 
 /// Headers that only apply to a single transport hop and must not be
@@ -224,19 +256,16 @@ fn is_hop_by_hop(
 
 fn should_forward_response_header(
     name: &str,
-    method: &http::Method,
     connection_tokens: &[String],
 ) -> bool {
-    if is_hop_by_hop(name, connection_tokens) {
-        return false;
-    }
-    !(name == "content-length" && method != http::Method::HEAD)
+    // `Content-Length` is end-to-end and stays valid because the body is
+    // streamed through untouched. Dropping it would force chunked encoding.
+    !is_hop_by_hop(name, connection_tokens)
 }
 
 pub async fn send_http_request(
     client: &crate::upstream::UpstreamClient,
     forward_req: Request<Incoming>,
-    method: &http::Method,
     client_version: http::Version,
 ) -> Result<Response<BoxBody>> {
     let started = std::time::Instant::now();
@@ -280,7 +309,6 @@ pub async fn send_http_request(
     for (name, value) in parts.headers.iter() {
         if should_forward_response_header(
             name.as_str(),
-            method,
             &connection_tokens,
         ) {
             response_builder = response_builder.header(name, value);

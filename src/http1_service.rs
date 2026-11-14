@@ -52,7 +52,6 @@ pub(crate) async fn handle_http1_request(
             http::send_http_request(
                 &client,
                 forward_req,
-                &method,
                 version,
             )
                 .await
