@@ -30,6 +30,8 @@ mod socks5;
 
 mod tunnel;
 
+mod tuning;
+
 mod http1_service;
 
 mod http2_service;
@@ -65,6 +67,21 @@ const EOL: &str = "\n";
 async fn main() -> Result<()> {
     let args = args::parse_and_validate()?;
     let _log_guard = logging::init(args.quiet, args.verbose);
+    tuning::init(tuning::Tuning {
+        socket_recv_buffer: args.socket_recv_buffer_bytes(),
+        socket_send_buffer: args.socket_send_buffer_bytes(),
+        tunnel_buffer_size: args.tunnel_buffer_bytes(),
+    });
+    log_debug!(
+        "[TUNING] tunnel copy buffer: {} KiB, socket recv: {}, socket send: {}",
+        args.tunnel_buffer_size,
+        args.socket_recv_buffer
+            .map(|v| format!("{} KiB", v))
+            .unwrap_or_else(|| "per-role".to_string()),
+        args.socket_send_buffer
+            .map(|v| format!("{} KiB", v))
+            .unwrap_or_else(|| "per-role".to_string())
+    );
     let auth = socks5::Socks5Auth::new(
         args.socks5_username.clone(),
         args.socks5_password.clone(),

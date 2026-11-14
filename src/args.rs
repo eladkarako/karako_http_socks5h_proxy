@@ -49,6 +49,15 @@ pub struct Args {
     /// Add X-Forwarded-For with the client address
     #[arg(long)]
     pub x_forwarded_for: bool,
+    /// Copy buffer size per direction for CONNECT tunnels, in KiB
+    #[arg(long, default_value_t = 32)]
+    pub tunnel_buffer_size: u16,
+    /// Override SO_RCVBUF for all sockets, in KiB (default: per-role)
+    #[arg(long)]
+    pub socket_recv_buffer: Option<u32>,
+    /// Override SO_SNDBUF for all sockets, in KiB (default: per-role)
+    #[arg(long)]
+    pub socket_send_buffer: Option<u32>,
     /// Increase log verbosity (use twice to dump SOCKS5 packets)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
@@ -76,7 +85,39 @@ pub fn parse_and_validate() -> Result<Args> {
          pass --allow-non-local to expose it to the network",
         args.bind
     );
+    ensure!(
+        (1..=1024).contains(&args.tunnel_buffer_size),
+        "--tunnel-buffer-size must be between 1 and 1024 KiB"
+    );
+    if let Some(size) = args.socket_recv_buffer {
+        ensure!(
+            (1..=1_048_576).contains(&size),
+            "--socket-recv-buffer must be between 1 and 1048576 KiB"
+        );
+    }
+    if let Some(size) = args.socket_send_buffer {
+        ensure!(
+            (1..=1_048_576).contains(&size),
+            "--socket-send-buffer must be between 1 and 1048576 KiB"
+        );
+    }
     Ok(args)
+}
+
+impl Args {
+    pub fn tunnel_buffer_bytes(&self) -> usize {
+        usize::from(self.tunnel_buffer_size) * 1024
+    }
+
+    pub fn socket_recv_buffer_bytes(&self) -> Option<usize> {
+        self.socket_recv_buffer
+            .map(|kib| kib as usize * 1024)
+    }
+
+    pub fn socket_send_buffer_bytes(&self) -> Option<usize> {
+        self.socket_send_buffer
+            .map(|kib| kib as usize * 1024)
+    }
 }
 
 /// Resolves the SOCKS5 password from the file, the environment, or the

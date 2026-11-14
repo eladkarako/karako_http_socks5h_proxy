@@ -70,22 +70,37 @@ impl SocketConfiguration {
 pub fn configure_listener_socket(listener: &TcpListener) {
     let socket_ref = SockRef::from(listener);
     let config = SocketConfiguration::CLIENT_INBOUND;
+    let (recv, send) = effective_buffers(&config);
     report(
         config.name,
         "SO_RCVBUF",
-        socket_ref.set_recv_buffer_size(config.recv_buffer),
+        socket_ref.set_recv_buffer_size(recv),
     );
     report(
         config.name,
         "SO_SNDBUF",
-        socket_ref.set_send_buffer_size(config.send_buffer),
+        socket_ref.set_send_buffer_size(send),
     );
     log_debug!(
         "[SOCKET] [{}] Listener buffers: recv={}KB send={}KB",
         config.name,
-        config.recv_buffer / 1024,
-        config.send_buffer / 1024
+        recv / 1024,
+        send / 1024
     );
+}
+
+/// Returns the configured buffer sizes, falling back to the per-role
+/// defaults when the user did not override them on the command line.
+fn effective_buffers(config: &SocketConfiguration) -> (usize, usize) {
+    let tuning = crate::tuning::get();
+    (
+        tuning
+            .socket_recv_buffer
+            .unwrap_or(config.recv_buffer),
+        tuning
+            .socket_send_buffer
+            .unwrap_or(config.send_buffer),
+    )
 }
 
 /// Applies best-effort socket tuning. None of these options is required
@@ -96,6 +111,7 @@ pub fn configure_tokio_socket(
     config: SocketConfiguration,
 ) {
     let socket_ref = SockRef::from(stream);
+    let (recv, send) = effective_buffers(&config);
     report(
         config.name,
         "TCP_NODELAY",
@@ -104,12 +120,12 @@ pub fn configure_tokio_socket(
     report(
         config.name,
         "SO_RCVBUF",
-        socket_ref.set_recv_buffer_size(config.recv_buffer),
+        socket_ref.set_recv_buffer_size(recv),
     );
     report(
         config.name,
         "SO_SNDBUF",
-        socket_ref.set_send_buffer_size(config.send_buffer),
+        socket_ref.set_send_buffer_size(send),
     );
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -136,8 +152,8 @@ pub fn configure_tokio_socket(
     log_debug!(
         "[SOCKET] [{}] recv={}KB send={}KB | keepalive idle={}s interval={}s retries={}",
         config.name,
-        config.recv_buffer / 1024,
-        config.send_buffer / 1024,
+        recv / 1024,
+        send / 1024,
         config.keepalive_idle.as_secs(),
         config.keepalive_interval.as_secs(),
         config.keepalive_retries

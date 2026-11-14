@@ -20,8 +20,6 @@ use crate::socks5::{
 /// before it is torn down.
 pub(crate) const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
-const TUNNEL_BUFFER_SIZE: usize = 32 * 1024;
-
 /// Handles a `CONNECT` request by opening a SOCKS5 tunnel to the
 /// requested authority and upgrading the client connection to a raw
 /// byte stream.
@@ -132,12 +130,13 @@ pub async fn handle_tunnel(
     target.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     let mut target = Box::pin(target);
 
+    let buffer_size = crate::tuning::get().tunnel_buffer_size;
     let (client_to_target, target_to_client) =
         tokio::io::copy_bidirectional_with_sizes(
             &mut client,
             &mut target,
-            TUNNEL_BUFFER_SIZE,
-            TUNNEL_BUFFER_SIZE,
+            buffer_size,
+            buffer_size,
         )
             .await
             .with_context(|| {
