@@ -8,26 +8,31 @@ HTTP proxy that tunnels through SOCKS5h
 Usage: karako_http_socks5h_proxy [OPTIONS]
 
 Options:
-  -p, --http-port <HTTP_PORT>              [default: 8765]
-  -u, --upstream-port <UPSTREAM_PORT>      [default: 5678]
+  -p, --http-port <HTTP_PORT>              Port the HTTP proxy listens on for clients [default: 8765]
+  -u, --upstream-port <UPSTREAM_PORT>      Port of the upstream SOCKS5 server [default: 5678]
   -b, --bind <BIND>                        Address to bind the HTTP proxy listener on [default: 127.0.0.1]
-      --upstream-host <UPSTREAM_HOST>      Host of the upstream SOCKS5 server [default: 127.0.0.1]
+      --upstream-host <UPSTREAM_HOST>      Address of the upstream SOCKS5 server [default: 127.0.0.1]
       --socks5-username <SOCKS5_USERNAME>  Username for SOCKS5 username/password authentication
       --socks5-password <SOCKS5_PASSWORD>  Password for SOCKS5 username/password authentication
       --socks5-password-file <PATH>        File containing the SOCKS5 password
-      --proxy-username <PROXY_USERNAME>    Username required from HTTP clients (Basic auth)
-      --proxy-password <PROXY_PASSWORD>    Password required from HTTP clients (Basic auth)
+      --proxy-username <PROXY_USERNAME>    Username HTTP clients must send via Proxy-Authorization
+      --proxy-password <PROXY_PASSWORD>    Password HTTP clients must send via Proxy-Authorization
       --allow-non-local                    Allow binding to a non-loopback address
       --no-via                             Omit the Via header from forwarded messages
       --x-forwarded-for                    Add X-Forwarded-For with the client address
-      --tunnel-buffer-size <KIB>           Copy buffer per direction for CONNECT tunnels [default: 32]
-      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets
-      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets
-  -v, --verbose...                         Increase log verbosity (use twice to dump SOCKS5 packets)
+      --tunnel-buffer-size <KIB>           Copy buffer size per direction for CONNECT tunnels, in KiB [default: 32]
+      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets, in KiB
+      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets, in KiB
+  -v, --verbose...                         Increase log verbosity
   -q, --quiet                              Only log errors
-  -h, --help                               Print help
+  -h, --help                               Print help (see more with '--help')
   -V, --version                            Print version
 ```
+
+`-h` prints the summary above. `--help` prints an extra paragraph for every
+option: what the two port flags mean, where the SOCKS5 password can come
+from and in which order, why non-loopback binding needs an opt-in, and how
+the buffer sizes are interpreted.
 
 <hr/>
 

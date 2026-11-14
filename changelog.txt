@@ -25,6 +25,10 @@
 * (040b642) copy CONNECT tunnels with `tokio::io::copy_bidirectional_with_sizes` and `tokio-io-timeout` (32 KB buffers, same 300s idle timeout).
 * (d96b4ad) flush non-blocking logs on normal shutdown.
 * (c14453d) expose tunnel copy size and global `SO_RCVBUF`/`SO_SNDBUF` overrides through `--tunnel-buffer-size`, `--socket-recv-buffer` and `--socket-send-buffer`.
+* (69cd08e) rename every module to a three-word `snake_case` name (`command_line_args`, `http_proxy_service`, `socks5_handshake_flow`, ...); `main` stays `main`.
+* (fb3aca6) give every command-line option a short and long doc comment so `-h` stays compact and `--help` explains ports, password precedence, the non-loopback guard and buffer units.
+* (7323fab) add module docs, item rustdoc and inline notes to the forwarding, HTTP/1.1, HTTP/2, CONNECT, SOCKS5, body-timeout and error modules.
+* (051a96b) document the entry point, connection service, inbound auth, socket roles, buffer tuning, logging and upstream client, including field-level rustdoc for the configuration types.
 
 26.11.11
 * use `mimalloc` in windows instead of the segmented heap previously opt-in via manifest.
