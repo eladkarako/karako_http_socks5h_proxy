@@ -1,6 +1,7 @@
-use anyhow::{ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use clap::Parser;
 use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = env!("CARGO_PKG_NAME"))]
@@ -22,11 +23,17 @@ pub struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     pub upstream_host: IpAddr,
     /// Username for SOCKS5 username/password authentication
-    #[arg(long, requires = "socks5_password")]
+    #[arg(long)]
     pub socks5_username: Option<String>,
     /// Password for SOCKS5 username/password authentication
-    #[arg(long, requires = "socks5_username")]
+    ///
+    /// Prefer --socks5-password-file or KARAKO_SOCKS5_PASSWORD; arguments
+    /// are visible to other users through the process list.
+    #[arg(long, conflicts_with = "socks5_password_file")]
     pub socks5_password: Option<String>,
+    /// File containing the SOCKS5 password (a trailing newline is stripped)
+    #[arg(long)]
+    pub socks5_password_file: Option<PathBuf>,
     /// Username required from HTTP clients via Proxy-Authorization: Basic
     #[arg(long, requires = "proxy_password")]
     pub proxy_username: Option<String>,
@@ -51,7 +58,8 @@ pub struct Args {
 }
 
 pub fn parse_and_validate() -> Result<Args> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    resolve_socks5_password(&mut args)?;
     let listen = SocketAddr::new(args.bind, args.http_port);
     let upstream =
         SocketAddr::new(args.upstream_host, args.upstream_port);
@@ -69,4 +77,43 @@ pub fn parse_and_validate() -> Result<Args> {
         args.bind
     );
     Ok(args)
+}
+
+/// Resolves the SOCKS5 password from the file, the environment, or the
+/// command line, in that order, and validates that a username is paired
+/// with a password.
+fn resolve_socks5_password(args: &mut Args) -> Result<()> {
+    if let Some(path) = args.socks5_password_file.as_deref() {
+        let contents =
+            std::fs::read_to_string(path).with_context(|| {
+                format!(
+                    "Failed to read SOCKS5 password file {}",
+                    path.display()
+                )
+            })?;
+        args.socks5_password = Some(
+            contents
+                .trim_end_matches(|c| c == '\r' || c == '\n')
+                .to_string(),
+        );
+    }
+    if args.socks5_password.is_none() {
+        if let Ok(password) = std::env::var("KARAKO_SOCKS5_PASSWORD") {
+            args.socks5_password = Some(password);
+        }
+    }
+    match (
+        args.socks5_username.is_some(),
+        args.socks5_password.is_some(),
+    ) {
+        (true, false) => bail!(
+            "--socks5-username requires --socks5-password, \
+             --socks5-password-file, or KARAKO_SOCKS5_PASSWORD"
+        ),
+        (false, true) => bail!(
+            "a SOCKS5 password was provided without --socks5-username"
+        ),
+        _ => {}
+    }
+    Ok(())
 }
