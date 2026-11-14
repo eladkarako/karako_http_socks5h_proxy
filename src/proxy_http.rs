@@ -275,7 +275,7 @@ pub async fn send_http_request(
         forward_req.headers().len()
     );
     log_trace!("[UPSTREAM] Full target: {}", forward_req.uri());
-    if crate::logging::enabled(crate::logging::Level::Trace) {
+    if tracing::enabled!(tracing::Level::TRACE) {
         for (name, value) in forward_req.headers().iter() {
             log_trace!(
                 "[UPSTREAM] Request header: {}: {}",

@@ -1,41 +1,43 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::OnceLock;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::filter::LevelFilter;
 
-/// Log verbosity, ordered from quietest to noisiest.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[repr(u8)]
-pub enum Level {
-    Error = 0,
-    Warn = 1,
-    Info = 2,
-    Debug = 3,
-    Trace = 4,
-}
-
-static LEVEL: AtomicU8 = AtomicU8::new(Level::Info as u8);
+/// Keeps the non-blocking log writer alive for the lifetime of the
+/// process. Dropping it would stop the background logging thread.
+static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 
 /// Applies the `--quiet` / `--verbose` command-line flags.
 ///
 /// Without flags the proxy reports one line per request plus
 /// connection-level events. `-v` adds handshake, socket and timing
 /// details; `-vv` also dumps the raw SOCKS5 packets.
+///
+/// Logging is written through a non-blocking channel so that a slow
+/// console or pipe cannot stall request handling.
 pub fn init(
     quiet: bool,
     verbose: u8,
 ) {
     let level = if quiet {
-        Level::Error
+        LevelFilter::ERROR
     } else {
         match verbose {
-            0 => Level::Info,
-            1 => Level::Debug,
-            _ => Level::Trace,
+            0 => LevelFilter::INFO,
+            1 => LevelFilter::DEBUG,
+            _ => LevelFilter::TRACE,
         }
     };
-    LEVEL.store(level as u8, Ordering::Relaxed);
-}
-
-pub fn enabled(level: Level) -> bool {
-    (level as u8) <= LEVEL.load(Ordering::Relaxed)
+    let (writer, guard) =
+        tracing_appender::non_blocking(std::io::stderr());
+    let _ = LOG_GUARD.set(guard);
+    let _ = tracing_subscriber::fmt()
+        .with_writer(writer)
+        .with_max_level(level)
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_level(false)
+        .try_init();
 }
 
 /// Formats bytes as uppercase hex, sixteen per line, for protocol
@@ -53,40 +55,32 @@ pub fn hex_dump(bytes: &[u8]) -> String {
     out.trim_end().to_string()
 }
 
-macro_rules! log_at {
-    ($level:expr, $($arg:tt)*) => {{
-        if $crate::logging::enabled($level) {
-            eprintln!($($arg)*);
-        }
-    }};
-}
-
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        log_at!($crate::logging::Level::Error, $($arg)*)
+        ::tracing::error!($($arg)*)
     };
 }
 
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        log_at!($crate::logging::Level::Warn, $($arg)*)
+        ::tracing::warn!($($arg)*)
     };
 }
 
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        log_at!($crate::logging::Level::Info, $($arg)*)
+        ::tracing::info!($($arg)*)
     };
 }
 
 macro_rules! log_debug {
     ($($arg:tt)*) => {
-        log_at!($crate::logging::Level::Debug, $($arg)*)
+        ::tracing::debug!($($arg)*)
     };
 }
 
 macro_rules! log_trace {
     ($($arg:tt)*) => {
-        log_at!($crate::logging::Level::Trace, $($arg)*)
+        ::tracing::trace!($($arg)*)
     };
 }
