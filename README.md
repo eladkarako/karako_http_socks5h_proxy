@@ -100,6 +100,37 @@ Options:
           A client-supplied `X-Forwarded-For` is discarded and replaced, so the header cannot be
           used to spoof the original address.
 
+      --boostaler-cache
+          Extend Cache-Control with stale-while-revalidate and stale-if-error
+          
+          Removes any existing `stale-while-revalidate`/`stale-if-error` directives, then appends
+          `stale-while-revalidate=86400` (one day) and `stale-if-error=259200` (three days) to every
+          response. A homage to the historic "Boostaler" browser extension, which aimed to keep
+          pages usable while a site was slow or down.
+          
+          [alias: --stale-cache]
+
+      --cors-allow-all
+          Add permissive CORS headers to every response
+          
+          Replaces existing values for Access-Control-Allow-Methods, -Origin, -Headers,
+          -Allow-Credentials, Expose-Headers, Timing-Allow-Origin and
+          X-Permitted-Cross-Domain-Policies, on every method including non-OPTIONS. Any path ending
+          in `CrossDomain.xml` or `ClientAccessPolicy.xml` (any letter case) receives a synthetic
+          200 policy file instead of the upstream response. CONNECT tunnels carry opaque TLS after
+          the proxy's 200, so headers inside the tunnel cannot be changed.
+          
+          [alias: --cors]
+
+      --strip-security-headers
+          Remove CSP and related security headers from every response
+          
+          Strips P3P, Alt-Svc, Strict-Transport-Security, X-Frame-Options, X-XSS-Protection,
+          X-Content-Type-Options, Content-Security-Policy, Referrer-Policy and
+          Public-Key-Pins-Report-Only, matching names in any letter case.
+          
+          [alias: --strip-csp]
+
       --tunnel-buffer-size <KIB>
           Copy buffer size per direction for CONNECT tunnels, in KiB
           
@@ -146,8 +177,9 @@ Options:
 
 `-h` prints the summary above. `--help` prints an extra paragraph for every
 option: what the two port flags mean, where the SOCKS5 password can come
-from and in which order, why non-loopback binding needs an opt-in, and how
-the buffer sizes are interpreted.
+from and in which order, why non-loopback binding needs an opt-in, how
+the buffer sizes are interpreted, and what each response-rewriting flag
+changes.
 
 <hr/>
 
@@ -335,6 +367,126 @@ forwarded messages. Pass `--x-forwarded-for` to add
 `X-Forwarded-For: <client-ip>`; a client-supplied value is replaced so it
 cannot be used to spoof the original address.
 
+### Response header rewriting
+
+Three opt-in flags rewrite the response head before it leaves the proxy.
+They apply to every response the proxy emits, in either HTTP version:
+forwarded responses, `407` challenges, error responses such as `400` and
+`502`, the `200` that answers `CONNECT`, and the synthetic cross-domain
+policy files. The flags are independent and can be combined.
+
+None of them can reach inside a `CONNECT` tunnel. After the proxy replies
+`200` to `CONNECT`, the connection carries the client's TLS session
+end to end; the proxy only copies bytes and never sees the inner
+response headers. For HTTPS traffic only the outer `200` head is
+rewritten. Use plain HTTP, or terminate TLS in front of the proxy, if the
+inner headers matter.
+
+#### `--boostaler-cache` (alias `--stale-cache`)
+
+Every response gets `Cache-Control: stale-while-revalidate=86400,
+stale-if-error=259200`. Existing `stale-while-revalidate` and
+`stale-if-error` directives are removed first, so a weaker upstream value
+cannot win; every other directive is kept. For example,
+`public, max-age=60, stale-while-revalidate=10, immutable` becomes
+`public, max-age=60, immutable, stale-while-revalidate=86400,
+stale-if-error=259200`.
+
+The two directives tell a shared or browser cache how long it may serve
+an expired response:
+
+- `stale-while-revalidate=86400` — for one day the cache may answer from
+  its copy immediately, then refresh in the background.
+- `stale-if-error=259200` — for three days the cache may keep answering
+  from its copy if the origin returns an error or is unreachable.
+
+The name is a homage to the historic "Boostaler" browser extension,
+which tried to keep pages usable while a site was slow or down. See
+[RFC 5861](https://www.rfc-editor.org/rfc/rfc5861) for the directives.
+
+#### `--cors-allow-all` (alias `--cors`)
+
+Every response, on every method (not only `OPTIONS`), gets these headers,
+replacing any value the origin sent:
+
+| Header | Value |
+|---|---|
+| `Access-Control-Allow-Methods` | `CONNECT,DELETE,GET,HEAD,OPTIONS,PATCH,PING,POST,PUT,TRACE` |
+| `Access-Control-Allow-Origin` | `*` |
+| `Access-Control-Allow-Headers` | `Accept-Ranges,Authorization,Content-Disposition,Content-Encoding,Content-Length,Content-Range,Content-Type,ETag,Last-Modified,Range,X-Requested-With` |
+| `Access-Control-Expose-Headers` | same list as `Access-Control-Allow-Headers` |
+| `Access-Control-Allow-Credentials` | `true` |
+| `Timing-Allow-Origin` | `*` |
+| `X-Permitted-Cross-Domain-Policies` | `all` |
+
+Browsers ignore `Access-Control-Allow-Credentials: true` together with
+`Access-Control-Allow-Origin: *`; the pair is sent verbatim because that
+is the historical permissive profile. Cookies and HTTP authentication
+still need an explicit origin, so relax the value yourself if you rely on
+credentialed requests.
+
+The same flag also mocks the two legacy cross-site policy files. A request
+whose path's last segment is `CrossDomain.xml` or `ClientAccessPolicy.xml`
+(in any letter case, for example `/foo/crossdomain.XML`) is answered
+locally with `200 OK`, `Content-Type: text/x-cross-domain-policy`, a
+recalculated `Content-Length`, and the corresponding body instead of the
+upstream file:
+
+```txt
+karako_http_socks5h_proxy -p 18765 -u 9150 --cors-allow-all
+curl -s -D - -x http://127.0.0.1:18765 http://example.com/CrossDomain.xml
+```
+
+Both bodies are compiled into the binary. The Flash policy permits
+`domain="*"` and `to-ports="*"`; the Silverlight policy grants `domain
+uri="*"` access to `/` including subpaths. Paths that merely contain the
+name, such as `/notCrossDomain.xml`, are forwarded upstream unchanged.
+
+#### `--strip-security-headers` (alias `--strip-csp`)
+
+Removes these response headers, matching names in any letter case:
+
+```txt
+p3p
+alt-svc
+strict-transport-security
+x-frame-options
+x-xss-protection
+x-content-type-options
+content-security-policy
+referrer-policy
+public-key-pins-report-only
+```
+
+Use it when an origin pins HSTS, blocks framing or scripts, or advertises
+`Alt-Svc` that the SOCKS5 path cannot reach. It is intentionally a fixed
+list; other `Content-Security-Policy-Report-Only` or `Public-Key-Pins`
+variants are left alone.
+
+#### Manual check
+
+Any origin that sends cache, CORS or security headers will show the
+difference. A one-file local fixture works too: serve it directly on
+`127.0.0.1:18888`, then start the proxy with all three flags.
+
+```txt
+karako_http_socks5h_proxy -p 18765 -u 9150 \
+  --boostaler-cache --cors-allow-all --strip-security-headers
+
+curl -s --noproxy "" -D - -o NUL -x http://127.0.0.1:18765 \
+  http://127.0.0.1:18888/
+```
+
+`curl` honors `NO_PROXY` for localhost, so `--noproxy ""` (or an empty
+`NO_PROXY`) is needed to send the request through the proxy. The output
+should show the two stale directives appended, the seven CORS headers,
+and none of the stripped security headers. Request a policy path to see
+the mock instead of the upstream file:
+
+```txt
+curl -s -x http://127.0.0.1:18765 http://127.0.0.1:18888/CrossDomain.xml
+```
+
 ### Buffer tuning
 
 CONNECT tunnels copy with a 32 KiB buffer per direction by default:
@@ -402,6 +554,7 @@ Key features:
 - SOCKS5 authentication: optional RFC 1929 username/password support, with a password file or environment variable
 - Client authentication: optional inbound `Proxy-Authorization: Basic` for the HTTP listener
 - Privacy: `--no-via` omits the proxy identity, query strings are not logged by default
+- Response rewriting (opt-in): `--boostaler-cache` extends stale serving, `--cors-allow-all` opens CORS and mocks the legacy cross-domain policy files, `--strip-security-headers` removes CSP/HSTS/framing headers
 - Tunable buffers: `--tunnel-buffer-size`, `--socket-recv-buffer`, `--socket-send-buffer`
 - Error mapping: `400` for bad client input, `502` for upstream failures, `504` for upstream timeouts
 - Robustness: bounded concurrency, graceful drain on shutdown, task panics are contained and logged
