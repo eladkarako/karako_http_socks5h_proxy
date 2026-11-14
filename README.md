@@ -2,6 +2,16 @@
 
 <hr/>
 
+gives your programs a way to use an upstream `SOCKS5h` server,  
+including its built-in DNS resolution on remote. meaning your own machine's DNS/HOSTS will not be used.
+
+you can use it with aria2c, yt-dlp, ffmpeg, wget, curl (although it has `SOCKS5h` support),  
+native batch-files scripts with `HTTPS_PROXY` and `HTTP_PROXY`. 
+
+<hr/>
+
+<details><summary><h3><code>--help</code> entries</h3></summary>
+
 ```txt
 HTTP-over-SOCKS5h forward proxy.
 
@@ -181,13 +191,7 @@ from and in which order, why non-loopback binding needs an opt-in, how
 the buffer sizes are interpreted, and what each response-rewriting flag
 changes.
 
-<hr/>
-
-gives your programs a way to use an upstream `SOCKS5h` server,  
-including its built-in DNS resolution on remote. meaning your own machine's DNS/HOSTS will not be used.
-
-you can use it with aria2c, yt-dlp, ffmpeg, wget, curl (although it has `SOCKS5h` support),  
-native batch-files scripts with `HTTPS_PROXY` and `HTTP_PROXY`. 
+</details>
 
 <hr/>
 
