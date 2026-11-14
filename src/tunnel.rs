@@ -1,13 +1,9 @@
 use anyhow::{Context, Result};
 use http::{Request, Response, StatusCode};
 use hyper::body::Incoming;
-use std::io;
 use std::time::Duration;
-use tokio::io::{
-    AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
-};
 use tokio::net::TcpStream;
-use tokio::time::timeout;
+use tokio_io_timeout::TimeoutStream;
 
 use crate::proxy_http::{
     empty_body, BoxBody, ForwardingOptions,
@@ -24,7 +20,7 @@ use crate::socks5::{
 /// before it is torn down.
 pub(crate) const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
-const TUNNEL_BUFFER_SIZE: usize = 16 * 1024;
+const TUNNEL_BUFFER_SIZE: usize = 32 * 1024;
 
 /// Handles a `CONNECT` request by opening a SOCKS5 tunnel to the
 /// requested authority and upgrading the client connection to a raw
@@ -124,29 +120,32 @@ pub async fn handle_tunnel(
         host,
         port
     );
-    let client = hyper_util::rt::TokioIo::new(upgraded);
-    let (mut client_read, mut client_write) =
-        tokio::io::split(client);
-    let (mut target_read, mut target_write) =
-        tokio::io::split(target);
-    let (client_to_target, target_to_client) = tokio::try_join!(
-        copy_with_idle_timeout(
-            &mut client_read,
-            &mut target_write,
-            TUNNEL_IDLE_TIMEOUT,
-        ),
-        copy_with_idle_timeout(
-            &mut target_read,
-            &mut client_write,
-            TUNNEL_IDLE_TIMEOUT,
-        ),
-    )
-        .with_context(|| {
-            format!(
-                "Tunnel {}:{} failed (idle timeout is {:?})",
-                host, port, TUNNEL_IDLE_TIMEOUT
-            )
-        })?;
+    let mut client = TimeoutStream::new(
+        hyper_util::rt::TokioIo::new(upgraded),
+    );
+    client.set_read_timeout(Some(TUNNEL_IDLE_TIMEOUT));
+    client.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
+    let mut client = Box::pin(client);
+
+    let mut target = TimeoutStream::new(target);
+    target.set_read_timeout(Some(TUNNEL_IDLE_TIMEOUT));
+    target.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
+    let mut target = Box::pin(target);
+
+    let (client_to_target, target_to_client) =
+        tokio::io::copy_bidirectional_with_sizes(
+            &mut client,
+            &mut target,
+            TUNNEL_BUFFER_SIZE,
+            TUNNEL_BUFFER_SIZE,
+        )
+            .await
+            .with_context(|| {
+                format!(
+                    "Tunnel {}:{} failed (idle timeout is {:?})",
+                    host, port, TUNNEL_IDLE_TIMEOUT
+                )
+            })?;
     log_info!(
         "[TUNNEL] Tunnel {}:{} closed normally after {:?}: client→target: {} bytes, target→client: {} bytes",
         host,
@@ -156,38 +155,4 @@ pub async fn handle_tunnel(
         target_to_client
     );
     Ok(())
-}
-
-async fn copy_with_idle_timeout<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    idle_timeout: Duration,
-) -> io::Result<u64>
-    where
-        R: AsyncRead + Unpin,
-        W: AsyncWrite + Unpin,
-{
-    let mut buffer = vec![0u8; TUNNEL_BUFFER_SIZE];
-    let mut copied = 0u64;
-    loop {
-        let read = timeout(idle_timeout, reader.read(&mut buffer))
-            .await
-            .map_err(|_| idle_timeout_error())??;
-        if read == 0 {
-            break;
-        }
-        timeout(idle_timeout, writer.write_all(&buffer[..read]))
-            .await
-            .map_err(|_| idle_timeout_error())??;
-        copied += read as u64;
-    }
-    writer.shutdown().await?;
-    Ok(copied)
-}
-
-fn idle_timeout_error() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::TimedOut,
-        "tunnel idle timeout expired",
-    )
 }

@@ -24,6 +24,7 @@ pin-project-lite = { version = "0.2" }
 hyper = { version = "1.12.0", features = ["client", "server", "http1", "http2"] }
 hyper-util = { version = "0.1.21", features = ["tokio", "server-auto", "client-legacy"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
+tokio-io-timeout = { version = "1.2" }
 tower-service = { version = "0.3.3" }
 socket2 = { version = "0.6.5", features = ["all"] }
 thiserror = { version = "2.0" }
