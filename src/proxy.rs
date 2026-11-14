@@ -12,6 +12,7 @@ use tokio::net::TcpStream;
 use crate::proxy_http::{full_body, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
+use crate::proxy_auth::{challenge, ProxyAuth};
 use crate::proxy_error::ProxyError;
 use crate::socks5::Socks5Auth;
 use crate::upstream::UpstreamClient;
@@ -36,6 +37,7 @@ struct ProxyService {
     client_addr: SocketAddr,
     client: UpstreamClient,
     auth: Socks5Auth,
+    inbound_auth: ProxyAuth,
 }
 
 impl Service<Request<Incoming>> for ProxyService {
@@ -57,7 +59,15 @@ impl Service<Request<Incoming>> for ProxyService {
         let client_addr = self.client_addr;
         let client = self.client.clone();
         let auth = self.auth.clone();
+        let inbound_auth = self.inbound_auth.clone();
         Box::pin(async move {
+            if !inbound_auth.is_authorized(&req) {
+                log_warn!(
+                    "[AUTH] Rejecting unauthenticated request from {}",
+                    client_addr
+                );
+                return Ok(challenge());
+            }
             let result = match req.version() {
                 hyper::Version::HTTP_2 => {
                     handle_h2_request(
@@ -120,6 +130,7 @@ pub async fn handle_client_connection(
     upstream_addr: SocketAddr,
     client: UpstreamClient,
     auth: Socks5Auth,
+    inbound_auth: ProxyAuth,
 ) -> Result<()> {
     let started = std::time::Instant::now();
     let io = hyper_util::rt::TokioIo::new(socket);
@@ -128,6 +139,7 @@ pub async fn handle_client_connection(
         client_addr: addr,
         client,
         auth,
+        inbound_auth,
     };
     let mut builder = hyper_util::server::conn::auto::Builder::new(
         hyper_util::rt::TokioExecutor::new(),

@@ -27,6 +27,15 @@ pub struct Args {
     /// Password for SOCKS5 username/password authentication
     #[arg(long, requires = "socks5_username")]
     pub socks5_password: Option<String>,
+    /// Username required from HTTP clients via Proxy-Authorization: Basic
+    #[arg(long, requires = "proxy_password")]
+    pub proxy_username: Option<String>,
+    /// Password required from HTTP clients via Proxy-Authorization: Basic
+    #[arg(long, requires = "proxy_username")]
+    pub proxy_password: Option<String>,
+    /// Allow binding to a non-loopback address (exposes the proxy)
+    #[arg(long)]
+    pub allow_non_local: bool,
     /// Increase log verbosity (use twice to dump SOCKS5 packets)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
@@ -46,6 +55,12 @@ pub fn parse_and_validate() -> Result<Args> {
          SOCKS5 server ({})",
         listen,
         upstream
+    );
+    ensure!(
+        args.bind.is_loopback() || args.allow_non_local,
+        "refusing to bind the proxy to non-loopback address {}; \
+         pass --allow-non-local to expose it to the network",
+        args.bind
     );
     Ok(args)
 }

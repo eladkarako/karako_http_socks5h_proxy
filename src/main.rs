@@ -20,6 +20,8 @@ mod proxy_http;
 
 mod proxy;
 
+mod proxy_auth;
+
 mod proxy_error;
 
 mod socket_config;
@@ -67,6 +69,10 @@ async fn main() -> Result<()> {
         args.socks5_username.clone(),
         args.socks5_password.clone(),
     );
+    let proxy_auth = proxy_auth::ProxyAuth::new(
+        args.proxy_username.clone(),
+        args.proxy_password.clone(),
+    );
 
     let addr = std::net::SocketAddr::new(args.bind, args.http_port);
     let upstream_addr = std::net::SocketAddr::new(
@@ -83,6 +89,22 @@ async fn main() -> Result<()> {
 
     log_info!("HTTP/1.1 + HTTP/2 proxy listening on {}", addr);
     log_info!("Forwarding to upstream SOCKS5h on {}", upstream_addr);
+    if !args.bind.is_loopback() {
+        if proxy_auth.is_enabled() {
+            log_warn!(
+                "Listening on non-loopback address {} with inbound \
+                 authentication enabled.",
+                args.bind
+            );
+        } else {
+            log_warn!(
+                "Listening on non-loopback address {} WITHOUT inbound \
+                 authentication: anyone who can reach this port can use \
+                 the upstream SOCKS5 proxy.",
+                args.bind
+            );
+        }
+    }
     log_debug!(
         "[LOG] Level is {} (use -v for handshake details, -vv for packet dumps)",
         if args.quiet {
@@ -221,11 +243,12 @@ async fn main() -> Result<()> {
                         );
                         let client = upstream_client.clone();
                         let auth = auth.clone();
+                        let proxy_auth = proxy_auth.clone();
                         connections.spawn(async move {
                             // Held for the lifetime of the connection so
                             // the semaphore reflects active handlers.
                             let _permit = permit;
-                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth).await {
+                            if let Err(e) = proxy::handle_client_connection(socket, client_addr, upstream_addr, client, auth, proxy_auth).await {
                                 log_error!("Client handler error from {}: {:#}", client_addr, e);
                             }
                         });

@@ -15,6 +15,7 @@ version = "26.11.11"
 
 [dependencies]
 anyhow = { version = "1.0.104" }
+base64 = { version = "0.22" }
 bytes = { version = "1.12.1" }
 clap = { version = "4.6.7", features = ["derive", "wrap_help", "usage", "cargo", "suggestions", "help", "color"] }
 http = { version = "1.5.0" }
