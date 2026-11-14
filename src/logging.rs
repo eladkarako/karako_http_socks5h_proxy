@@ -1,10 +1,5 @@
-use std::sync::OnceLock;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::filter::LevelFilter;
-
-/// Keeps the non-blocking log writer alive for the lifetime of the
-/// process. Dropping it would stop the background logging thread.
-static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 
 /// Applies the `--quiet` / `--verbose` command-line flags.
 ///
@@ -13,11 +8,12 @@ static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 /// details; `-vv` also dumps the raw SOCKS5 packets.
 ///
 /// Logging is written through a non-blocking channel so that a slow
-/// console or pipe cannot stall request handling.
+/// console or pipe cannot stall request handling. The returned guard
+/// must be kept alive by the caller; dropping it flushes pending lines.
 pub fn init(
     quiet: bool,
     verbose: u8,
-) {
+) -> WorkerGuard {
     let level = if quiet {
         LevelFilter::ERROR
     } else {
@@ -29,7 +25,6 @@ pub fn init(
     };
     let (writer, guard) =
         tracing_appender::non_blocking(std::io::stderr());
-    let _ = LOG_GUARD.set(guard);
     let _ = tracing_subscriber::fmt()
         .with_writer(writer)
         .with_max_level(level)
@@ -38,6 +33,7 @@ pub fn init(
         .with_target(false)
         .with_level(false)
         .try_init();
+    guard
 }
 
 /// Formats bytes as uppercase hex, sixteen per line, for protocol

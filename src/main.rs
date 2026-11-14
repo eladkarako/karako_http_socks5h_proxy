@@ -64,7 +64,7 @@ const EOL: &str = "\n";
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = args::parse_and_validate()?;
-    logging::init(args.quiet, args.verbose);
+    let _log_guard = logging::init(args.quiet, args.verbose);
     let auth = socks5::Socks5Auth::new(
         args.socks5_username.clone(),
         args.socks5_password.clone(),
