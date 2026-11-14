@@ -1,7 +1,7 @@
 use http::{Request, Response};
 use hyper::body::{Body, Incoming};
 
-use crate::http::{
+use crate::proxy_http::{
     self, build_forward_request, extract_target, BoxBody,
 };
 use crate::socks5::Socks5Auth;
@@ -24,7 +24,7 @@ pub(crate) async fn handle_h2_request(
     log_info!(
         "[HTTP/2] {} {} (host: {}:{}) from {}",
         method,
-        http::loggable_target(&uri),
+        proxy_http::loggable_target(&uri),
         host,
         port,
         client_addr
@@ -49,7 +49,7 @@ pub(crate) async fn handle_h2_request(
             let forward_req = build_forward_request(
                 &method, &uri, &host, port, req,
             )?;
-            http::send_http_request(
+            proxy_http::send_http_request(
                 &client,
                 forward_req,
                 version,
@@ -61,14 +61,14 @@ pub(crate) async fn handle_h2_request(
         Ok(response) => log_debug!(
             "[HTTP/2] {} {} -> {} in {:?}",
             method,
-            http::loggable_target(&uri),
+            proxy_http::loggable_target(&uri),
             response.status(),
             started.elapsed()
         ),
         Err(error) => log_debug!(
             "[HTTP/2] {} {} failed in {:?}: {:#}",
             method,
-            http::loggable_target(&uri),
+            proxy_http::loggable_target(&uri),
             started.elapsed(),
             error
         ),

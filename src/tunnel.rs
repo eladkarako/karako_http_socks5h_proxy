@@ -9,7 +9,7 @@ use tokio::io::{
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::http::{empty_body, BoxBody};
+use crate::proxy_http::{empty_body, BoxBody};
 use crate::socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
@@ -41,18 +41,17 @@ pub async fn connect_through_socks5(
         host,
         port
     );
-    let target_stream =
+    let mut target_stream =
         connect_to_socks5_server(upstream_addr).await?;
-    let mut target_stream_clone = target_stream;
     establish_socks5_connection(
-        &mut target_stream_clone,
+        &mut target_stream,
         &host,
         port,
         &auth,
     )
         .await?;
     configure_tokio_socket(
-        &target_stream_clone,
+        &target_stream,
         SocketConfiguration::SOCKS_TUNNEL,
     );
     log_debug!(
@@ -66,7 +65,7 @@ pub async fn connect_through_socks5(
         .status(StatusCode::OK)
         .header(
             http::header::VIA,
-            crate::http::via_value(client_version),
+            crate::proxy_http::via_value(client_version),
         )
         .body(empty_body())
         .context("Failed to build CONNECT response")?;
@@ -80,7 +79,7 @@ pub async fn connect_through_socks5(
                 );
                 if let Err(e) = handle_tunnel(
                     upgraded,
-                    target_stream_clone,
+                    target_stream,
                     &host,
                     port,
                 )

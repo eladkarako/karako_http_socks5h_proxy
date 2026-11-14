@@ -16,7 +16,7 @@ mod args;
 
 mod body;
 
-mod http;
+mod proxy_http;
 
 mod proxy;
 

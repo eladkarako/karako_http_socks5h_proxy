@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::http::{full_body, BoxBody, StatusCode};
+use crate::proxy_http::{full_body, BoxBody, StatusCode};
 use crate::http1_service::handle_http1_request;
 use crate::http2_service::handle_h2_request;
 use crate::proxy_error::ProxyError;
