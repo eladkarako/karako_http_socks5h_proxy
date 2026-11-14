@@ -3,30 +3,145 @@
 <hr/>
 
 ```txt
-HTTP proxy that tunnels through SOCKS5h
+HTTP-over-SOCKS5h forward proxy.
 
-Usage: karako_http_socks5h_proxy [OPTIONS]
+Listens for HTTP/1.1 and HTTP/2 clients and forwards their requests through an upstream SOCKS5h
+server. Host names travel to that server unresolved, so remote DNS is used.
+
+Plain HTTP is forwarded directly; HTTPS and other TLS traffic must use CONNECT.
+
+Example:
+  karako_http_socks5h_proxy -p 18765 -u 9150
+  curl -x http://127.0.0.1:18765 http://example.com/
+
+Usage: karako_http_socks5h_proxy.exe [OPTIONS]
 
 Options:
-  -p, --http-port <HTTP_PORT>              Port the HTTP proxy listens on for clients [default: 8765]
-  -u, --upstream-port <UPSTREAM_PORT>      Port of the upstream SOCKS5 server [default: 5678]
-  -b, --bind <BIND>                        Address to bind the HTTP proxy listener on [default: 127.0.0.1]
-      --upstream-host <UPSTREAM_HOST>      Address of the upstream SOCKS5 server [default: 127.0.0.1]
-      --socks5-username <SOCKS5_USERNAME>  Username for SOCKS5 username/password authentication
-      --socks5-password <SOCKS5_PASSWORD>  Password for SOCKS5 username/password authentication
-      --socks5-password-file <PATH>        File containing the SOCKS5 password
-      --proxy-username <PROXY_USERNAME>    Username HTTP clients must send via Proxy-Authorization
-      --proxy-password <PROXY_PASSWORD>    Password HTTP clients must send via Proxy-Authorization
-      --allow-non-local                    Allow binding to a non-loopback address
-      --no-via                             Omit the Via header from forwarded messages
-      --x-forwarded-for                    Add X-Forwarded-For with the client address
-      --tunnel-buffer-size <KIB>           Copy buffer size per direction for CONNECT tunnels, in KiB [default: 32]
-      --socket-recv-buffer <KIB>           Override SO_RCVBUF for all sockets, in KiB (default: 64-512 by role)
-      --socket-send-buffer <KIB>           Override SO_SNDBUF for all sockets, in KiB (default: 64-512 by role)
-  -v, --verbose...                         Increase log verbosity
-  -q, --quiet                              Only log errors
-  -h, --help                               Print help (see more with '--help')
-  -V, --version                            Print version
+  -p, --http-port <HTTP_PORT>
+          Port the HTTP proxy listens on for clients
+          
+          Point clients at `http://<bind>:<http-port>`. This is the port a browser or `curl -x`
+          should use, not the SOCKS5 port.
+          
+          [default: 8765]
+
+  -u, --upstream-port <UPSTREAM_PORT>
+          Port of the upstream SOCKS5 server
+          
+          Usually a local Tor instance (9050, or 9150 for the Tor Browser bundle). The proxy never
+          speaks SOCKS5 to clients.
+          
+          [default: 5678]
+
+  -b, --bind <BIND>
+          Address to bind the HTTP proxy listener on
+          
+          Defaults to loopback. Any non-loopback address requires `--allow-non-local`, because the
+          listener exposes the upstream SOCKS5 server to everyone who can reach it.
+          
+          [default: 127.0.0.1]
+
+      --upstream-host <UPSTREAM_HOST>
+          Address of the upstream SOCKS5 server
+          
+          Separate from `--bind` so the proxy can listen on one interface while reaching the
+          SOCKS5 server over another.
+          
+          [default: 127.0.0.1]
+
+      --socks5-username <SOCKS5_USERNAME>
+          Username for SOCKS5 username/password authentication
+          
+          Requires a password from `--socks5-password`, `--socks5-password-file`, or
+          `KARAKO_SOCKS5_PASSWORD`. When this is omitted, only the no-authentication method is
+          offered.
+
+      --socks5-password <SOCKS5_PASSWORD>
+          Password for SOCKS5 username/password authentication
+          
+          Prefer `--socks5-password-file` or `KARAKO_SOCKS5_PASSWORD`: command-line arguments are
+          visible to other users through the process list.
+
+      --socks5-password-file <PATH>
+          File containing the SOCKS5 password
+          
+          One trailing newline (LF or CRLF) is stripped. Takes precedence over
+          `KARAKO_SOCKS5_PASSWORD`, which takes precedence over `--socks5-password`.
+
+      --proxy-username <PROXY_USERNAME>
+          Username HTTP clients must send via Proxy-Authorization
+          
+          Turns the listener into an authenticated proxy. Requires `--proxy-password`. Clients
+          then use `Proxy-Authorization: Basic <base64(user:pass)>`, which `curl` does
+          automatically for `-x http://user:pass@host:port`.
+
+      --proxy-password <PROXY_PASSWORD>
+          Password HTTP clients must send via Proxy-Authorization
+          
+          Requests without a matching header receive `407 Proxy Authentication Required` with a
+          Basic challenge.
+
+      --allow-non-local
+          Allow binding to a non-loopback address
+          
+          Without this flag the proxy refuses to start on a public interface. Anyone who can reach
+          the listener can use the upstream SOCKS5 server, so pair this with client
+          authentication.
+
+      --no-via
+          Omit the Via header from forwarded messages
+          
+          `Via` identifies this proxy in requests and responses (RFC 9110). Use this when the
+          proxy should stay invisible to the origin server.
+
+      --x-forwarded-for
+          Add X-Forwarded-For with the client address
+          
+          A client-supplied `X-Forwarded-For` is discarded and replaced, so the header cannot be
+          used to spoof the original address.
+
+      --tunnel-buffer-size <KIB>
+          Copy buffer size per direction for CONNECT tunnels, in KiB
+          
+          Each direction of a tunnel gets its own buffer of this size. The default suits most
+          links; raise it for high-bandwidth tunnels on high-latency paths. Accepted range: 5 to
+          10240 KiB (5 KiB to 10 MiB).
+          
+          [default: 32]
+
+      --socket-recv-buffer <KIB>
+          Override SO_RCVBUF for all sockets, in KiB (default: 64-512 by role)
+          
+          Applies to the listener, SOCKS5 handshakes, upstream HTTP connections, and tunnels.
+          Without this flag each role keeps its own default: 64 KiB for handshakes, 256 KiB for
+          inbound and HTTP request sockets, and 512 KiB for CONNECT tunnels. Accepted range: 5 to
+          10240 KiB (5 KiB to 10 MiB).
+
+      --socket-send-buffer <KIB>
+          Override SO_SNDBUF for all sockets, in KiB (default: 64-512 by role)
+          
+          Same coverage and defaults as `--socket-recv-buffer`: 64 KiB for handshakes, 256 KiB for
+          inbound and HTTP request sockets, and 512 KiB for CONNECT tunnels. Accepted range: 5 to
+          10240 KiB (5 KiB to 10 MiB). The kernel may clamp the requested value; the effective
+          size is logged with `-v`.
+
+  -v, --verbose...
+          Increase log verbosity
+          
+          No flag logs one line per request. `-v` adds handshake, socket and timing details. `-vv`
+          also dumps SOCKS5 packets as hex.
+
+  -q, --quiet
+          Only log errors
+          
+          Mutually exclusive with `--verbose`. Useful when the proxy runs in the background and
+          only failures are interesting.
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
 
 `-h` prints the summary above. `--help` prints an extra paragraph for every
@@ -71,7 +186,7 @@ add `-v` for handshake, socket and timing details, `-vv` to also dump the raw SO
 
 sample `-vv`
 
-```
+```txt
 [SOCKS5] CONNECT example.com:443 (atyp=0x03, 18 bytes)
 [SOCKS5] CONNECT out (18 bytes):
 05 01 00 03 0B 65 78 61 6D 70 6C 65 2E 63 6F 6D
@@ -88,19 +203,19 @@ sample `-vv`
 The examples below assume a SOCKS5h server on
 `127.0.0.1:9150` and start the proxy on port `18765`:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150
 ```
 
 ### Plain HTTP through the proxy
 
-```bash
+```txt
 curl -x http://127.0.0.1:18765 http://example.com/
 ```
 
 ### HTTPS through a CONNECT tunnel
 
-```bash
+```txt
 curl -k -x http://127.0.0.1:18765 https://example.com/
 ```
 
@@ -109,7 +224,7 @@ certificate chain; HTTPS itself is tunnelled end to end.
 
 ### HEAD, 204 and 304 responses
 
-```bash
+```txt
 curl -I -x http://127.0.0.1:18765 http://example.com/
 curl -s -o NUL -w "%{http_code}\n" -x http://127.0.0.1:18765 http://httpbin.org/status/204
 curl -s -o NUL -w "%{http_code}\n" -x http://127.0.0.1:18765 http://httpbin.org/status/304
@@ -117,7 +232,7 @@ curl -s -o NUL -w "%{http_code}\n" -x http://127.0.0.1:18765 http://httpbin.org/
 
 ### Streaming a large request body
 
-```bash
+```txt
 # 1 MiB of random data
 python -c "import os;open('body.bin','wb').write(os.urandom(1024*1024))"
 curl -x http://127.0.0.1:18765 --data-binary @body.bin http://httpbin.org/post
@@ -131,33 +246,39 @@ memory.
 Send two requests to the same origin in one command. With `-v` you
 should see a single `SOCKS5 Handshake complete` line for that origin:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 -v
 curl -s -o NUL -x http://127.0.0.1:18765 http://example.com/ http://example.com/
 ```
 
 ### Inspect the `Via` header
 
-```bash
+```txt
 curl -s -D - -o NUL -x http://127.0.0.1:18765 http://example.com/ | findstr /i "^via:"
+```
+
+or
+
+```txt
+curl --silent --output NUL --write-out "Via: %header{via}\n" --proxy http://127.0.0.1:18765 http://example.com/
 ```
 
 ### Listen on IPv6 loopback
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 --bind ::1
 curl -x "http://[::1]:18765" http://example.com/
 ```
 
 ### Upstream SOCKS5 on another host
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 --upstream-host 192.168.1.10
 ```
 
 ### Username/password authentication (RFC 1929)
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 \
   --socks5-username alice --socks5-password secret
 ```
@@ -170,7 +291,7 @@ key; other SOCKS5 servers may validate them.
 Command-line arguments are visible to other users through the process
 list. Prefer one of these instead:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 \
   --socks5-username alice --socks5-password-file ./socks.pw
 
@@ -184,7 +305,7 @@ which takes precedence over `--socks5-password`.
 
 ### Require clients to authenticate
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 \
   --proxy-username alice --proxy-password secret
 
@@ -200,7 +321,7 @@ Binding to anything other than a loopback address requires an explicit
 opt-in, because the listener exposes the upstream SOCKS5 server to the
 network:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 --bind 0.0.0.0 --allow-non-local
 ```
 
@@ -218,7 +339,7 @@ cannot be used to spoof the original address.
 
 CONNECT tunnels copy with a 32 KiB buffer per direction by default:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 --tunnel-buffer-size 64
 ```
 
@@ -226,7 +347,7 @@ Socket buffers keep per-role defaults: 64 KiB for the SOCKS5 handshake,
 256 KiB for inbound and HTTP request sockets, and 512 KiB for CONNECT
 tunnels. Override all of them for a high-throughput tunnel:
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150 \
   --tunnel-buffer-size 64 --socket-recv-buffer 512 --socket-send-buffer 512
 ```
@@ -250,7 +371,7 @@ you need the full upstream URI while debugging.
 
 ### Logging levels
 
-```bash
+```txt
 karako_http_socks5h_proxy -p 18765 -u 9150        # one line per request
 karako_http_socks5h_proxy -p 18765 -u 9150 -v     # handshake, socket and timing details
 karako_http_socks5h_proxy -p 18765 -u 9150 -vv    # also dump raw SOCKS5 packets
@@ -359,25 +480,25 @@ The following diagrams cover:
 
 Client                         Proxy                    Upstream Target
   |                              |                              |
-  | GET /path HTTP/1.1            |                              |
-  | Host: example.com             |                              |
+  | GET /path HTTP/1.1           |                              |
+  | Host: example.com            |                              |
   |─────────────────────────────>|                              |
-  |                               | 1. Extract host:port        |
-  |                               |    (example.com:80)         |
-  |                               |                              |
-  |                               | 2. Connect to SOCKS5        |
-  |                               |────────────────────────────>|
-  |                               |<────────────SOCKS5 OK────────|
-  |                               |                              |
-  |                               | 3. Forward HTTP request     |
-  |                               |    to example.com:80        |
-  |                               |────────────────────────────>|
-  |                               |                              |
-  |                               | 4. Receive HTTP response    |
-  |                               |<────────────────────────────|
-  |          HTTP Response        |                              |
+  |                              | 1. Extract host:port         |
+  |                              |    (example.com:80)          |
+  |                              |                              |
+  |                              | 2. Connect to SOCKS5         |
+  |                              | ────────────────────────────>|
+  |                              |<────────────SOCKS5 OK────────|
+  |                              |                              |
+  |                              | 3. Forward HTTP request      |
+  |                              |    to example.com:80         |
+  |                              |─────────────────────────────>|
+  |                              |                              |
+  |                              | 4. Receive HTTP response     |
+  |                              |<─────────────────────────────|
+  |          HTTP Response       |                              |
   |<─────────────────────────────|                              |
-  |                               |                              |
+  |                              |                              |
 
 ```
 
@@ -390,33 +511,33 @@ Client                         Proxy                    Upstream Target
 
 Client                         Proxy                    Upstream Target
   |                              |                              |
-  | CONNECT example.com:443       |                              |
+  | CONNECT example.com:443      |                              |
   |─────────────────────────────>|                              |
-  |                               | 1. Extract host:port        |
-  |                               |    (example.com:443)        |
-  |                               |                              |
-  |                               | 2. Connect to SOCKS5        |
-  |                               |────────────────────────────>|
-  |                               |<────────────SOCKS5 OK────────|
-  |                               |                              |
-  |        200 Connection         |                              |
+  |                              | 1. Extract host:port         |
+  |                              |    (example.com:443)         |
+  |                              |                              |
+  |                              | 2. Connect to SOCKS5         |
+  |                              |─────────────────────────────>|
+  |                              |<────────────SOCKS5 OK────────|
+  |                              |                              |
+  |        200 Connection        |                              |
   |<─────────────────────────────|                              |
-  |                               | 3. Upgrade & tunnel         |
-  |◄─── HTTPS tunnel active ─────────────────────────────────►|
-  |                               |                              |
-  | CLIENT_HELLO (TLS)            |                              |
-  |─────────────────────────────>|────────────────────────────>|
-  |                               |                              |
-  |          SERVER_HELLO         |                              |
-  |<─────────────────────────────|<────────────────────────────|
-  |                               |                              |
-  |  [bidirectional HTTPS copy]   |                              |
-  |◄──────────────────────────────────────────────────────────►|
-  |                               | (5-minute idle timeout)      |
-  |                               |                              |
-  |        [connection close]     |                              |
-  |─────────────────────────────>|────────────────────────────>|
-  |                               |                              |
+  |                              | 3. Upgrade & tunnel          |
+  |◄─── HTTPS tunnel active ───────────────────────────────────►|
+  |                              |                              |
+  | CLIENT_HELLO (TLS)           |                              |
+  |─────────────────────────────>|─────────────────────────────>|
+  |                              |                              |
+  |          SERVER_HELLO        |                              |
+  |<─────────────────────────────|<─────────────────────────────|
+  |                              |                              |
+  |  [bidirectional HTTPS copy]  |                              |
+  |◄───────────────────────────────────────────────────────────►|
+  |                              | (5-minute idle timeout)      |
+  |                              |                              |
+  |        [connection close]    |                              |
+  |─────────────────────────────>|─────────────────────────────>|
+  |                              |                              |
 
 ```
 
@@ -429,30 +550,30 @@ Client                         Proxy                    Upstream Target
 
 HTTP Proxy (Client)            SOCKS5h Server (Upstream)
        |                                  |
-       | GREETING: [VER=5, NMETHODS=1,  |
-       | METHOD=0 (no auth)]             |
-       |──────────────────────────────>|
+       | GREETING: [VER=5, NMETHODS=1,    |
+       | METHOD=0 (no auth)]              |
+       |─────────────────────────────────>|
        |                                  |
-       |          METHOD SELECTION:      |
-       |          [VER=5, METHOD=0]      |
-       |<──────────────────────────────|
+       |          METHOD SELECTION:       |
+       |          [VER=5, METHOD=0]       |
+       |<─────────────────────────────────|
        |                                  |
-       | CONNECT REQUEST:                |
-       | [VER=5, CMD=1, RSV=0,           |
-       |  ATYP=3 (domain),               |
-       |  DLEN, DNAME..., PORT]          |
-       |──────────────────────────────>|
+       | CONNECT REQUEST:                 |
+       | [VER=5, CMD=1, RSV=0,            |
+       |  ATYP=3 (domain),                |
+       |  DLEN, DNAME..., PORT]           |
+       |─────────────────────────────────>|
        |                                  |
-       |   (DNS lookup on server)        |
-       |   (Connect to target)           |
+       |   (DNS lookup on server)         |
+       |   (Connect to target)            |
        |                                  |
-       |       CONNECT RESPONSE:         |
-       |       [VER=5, REP=0, RSV=0,    |
-       |        ATYP, BIND_ADDR, PORT]  |
-       |<──────────────────────────────|
+       |       CONNECT RESPONSE:          |
+       |       [VER=5, REP=0, RSV=0,      |
+       |        ATYP, BIND_ADDR, PORT]    |
+       |<─────────────────────────────────|
        |                                  |
-       | ✓ Tunnel established            |
-       | Ready for HTTP request          |
+       | ✓ Tunnel established             |
+       | Ready for HTTP request           |
        |                                  |
 
 ```
@@ -489,14 +610,14 @@ Inbound (client accept)  ──>  CLIENT_INBOUND
                               • TCP_NODELAY
                               • Socket tuning
 
-SOCKS5 handshake        ──>  SOCKS_HANDSHAKE
+SOCKS5 handshake         ──>  SOCKS_HANDSHAKE
                               • 10s timeout
                               • Handshake-specific opts
 
-HTTP request forward    ──>  SOCKS_HTTP_REQUEST
+HTTP request forward     ──>  SOCKS_HTTP_REQUEST
                               • Request-specific opts
 
-CONNECT tunnel          ──>  SOCKS_TUNNEL
+CONNECT tunnel           ──>  SOCKS_TUNNEL
                               • Tunnel-specific opts
                               • 5-minute idle timeout
 ```
