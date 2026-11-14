@@ -1,3 +1,11 @@
+//! `CONNECT` handling and the raw byte tunnel behind it.
+//!
+//! A successful `CONNECT` has two parts. First the proxy opens a SOCKS5
+//! connection to the requested authority and answers `200 OK`; `hyper`
+//! then upgrades the client connection and hands it back. Second, the
+//! upgraded stream and the SOCKS5 socket are spliced together and copied
+//! in both directions until one side closes or the idle timeout fires.
+
 use anyhow::{Context, Result};
 use http::{Request, Response, StatusCode};
 use hyper::body::Incoming;
@@ -69,6 +77,9 @@ pub async fn connect_through_socks5(
     let response = response_builder
         .body(empty_body())
         .context("Failed to build CONNECT response")?;
+    // The upgrade future must be polled after the 200 response is
+    // returned, so the copy runs in its own task. Moving both sockets
+    // into the task also keeps the client connection handler free.
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
@@ -106,6 +117,11 @@ pub async fn connect_through_socks5(
     Ok(response)
 }
 
+/// Copies bytes in both directions until either side closes or the idle
+/// timeout expires, then logs the byte counts.
+///
+/// `TimeoutStream` applies the idle timeout per read and per write, so a
+/// tunnel that keeps moving data stays open indefinitely.
 pub async fn handle_tunnel(
     upgraded: hyper::upgrade::Upgraded,
     target: TcpStream,
@@ -123,6 +139,8 @@ pub async fn handle_tunnel(
     );
     client.set_read_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     client.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
+    // `TimeoutStream` is not `Unpin`, and the copy needs `&mut` handles
+    // that outlive its internal futures, so pin them on the heap.
     let mut client = Box::pin(client);
 
     let mut target = TimeoutStream::new(target);

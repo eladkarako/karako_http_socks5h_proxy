@@ -1,3 +1,9 @@
+//! Typed errors that carry the HTTP status they should become.
+//!
+//! Anything not represented here is treated as an upstream failure
+//! (`502`). Adding a variant is how a new failure class gets its own
+//! status without string matching in the service layer.
+
 use std::time::Duration;
 
 /// Errors that the proxy maps to a specific HTTP status code.

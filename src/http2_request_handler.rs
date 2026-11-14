@@ -1,3 +1,10 @@
+//! Per-request handling for HTTP/2 clients.
+//!
+//! HTTP/2 runs over the same `hyper-util` auto server as HTTP/1.x; this
+//! module only differs in its log label. `CONNECT` uses the extended
+//! protocol enabled in the service builder, while ordinary requests take
+//! the same forwarding path as HTTP/1.1.
+
 use http::{Request, Response};
 use hyper::body::{Body, Incoming};
 
@@ -8,6 +15,11 @@ use crate::proxy_http_forwarder::{
 use crate::socks5_handshake_flow::Socks5Auth;
 use crate::upstream_http_client::UpstreamClient;
 
+/// Handles one HTTP/2 stream.
+///
+/// Each stream is independent, which is why the service caps concurrent
+/// streams: every forwarded request opens its own upstream SOCKS5
+/// connection.
 pub(crate) async fn handle_h2_request(
     req: Request<Incoming>,
     upstream_addr: std::net::SocketAddr,
@@ -37,6 +49,8 @@ pub(crate) async fn handle_h2_request(
         req.body().size_hint()
     );
     let response = match method.as_str() {
+        // HTTP/2 CONNECT carries `:authority` instead of a `Host`
+        // header; `extract_target` has already normalized both forms.
         "CONNECT" => {
             crate::http_connect_tunnel::connect_through_socks5(
                 req,

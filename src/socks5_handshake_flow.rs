@@ -1,3 +1,19 @@
+//! SOCKS5 client handshake used for every upstream connection.
+//!
+//! The proxy never accepts SOCKS5; it only speaks the client half of
+//! RFC 1928 to reach the upstream server, plus RFC 1929
+//! username/password authentication when credentials are configured.
+//!
+//! A session has three steps: greet with the supported authentication
+//! methods, authenticate if the server chose that method, then send a
+//! `CONNECT` for the destination and consume the bound-address reply.
+//! Host names are sent as-is so that the server resolves them remotely
+//! (the `s` in SOCKS5h).
+//!
+//! [`connect_to_socks5_server`] performs the TCP connect and
+//! [`establish_socks5_connection`] drives the protocol exchange, both
+//! under [`SOCKS5_HANDSHAKE_TIMEOUT`].
+
 use anyhow::{bail, ensure, Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -9,6 +25,8 @@ use crate::tcp_socket_config::{
     configure_tokio_socket, SocketConfiguration,
 };
 
+// Protocol constants from RFC 1928 (SOCKS5) and RFC 1929
+// (username/password authentication).
 const SOCKS5_VERSION: u8 = 5;
 const SOCKS5_CMD_CONNECT: u8 = 1;
 const SOCKS5_AUTH_METHOD_NONE: u8 = 0;
@@ -19,7 +37,11 @@ const SOCKS5_ATYP_DOMAIN: u8 = 3;
 const SOCKS5_ATYP_IPV4: u8 = 1;
 const SOCKS5_ATYP_IPV6: u8 = 4;
 const MAX_HOSTNAME_LEN: usize = 255;
+
+/// The whole handshake, not just TCP connect, must finish in this window.
 const SOCKS5_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Human-readable forms of the `REP` field, indexed by its value.
 const SOCKS5_ERRORS: &[&str] = &[
     "",
     "General SOCKS server failure",
@@ -55,6 +77,8 @@ impl Socks5Auth {
     }
 }
 
+/// Opens a TCP connection to the SOCKS5 server and applies handshake
+/// socket settings. The protocol exchange is not started here.
 pub async fn connect_to_socks5_server(
     upstream_addr: std::net::SocketAddr
 ) -> Result<TcpStream> {
@@ -92,6 +116,12 @@ pub async fn connect_to_socks5_server(
     Ok(stream)
 }
 
+/// Runs the SOCKS5 greeting, optional authentication and `CONNECT`
+/// exchange on an already-connected stream.
+///
+/// The caller must not use the stream for anything else until this
+/// returns `Ok`, because the reply to `CONNECT` marks the point where
+/// raw tunnel bytes begin.
 pub async fn establish_socks5_connection(
     stream: &mut TcpStream,
     host: &str,
@@ -123,6 +153,8 @@ pub async fn establish_socks5_connection(
     Ok(())
 }
 
+/// Drives the greeting and the CONNECT exchange in order, stopping at
+/// the first rejected step.
 async fn perform_socks5_handshake(
     stream: &mut TcpStream,
     host: &str,
@@ -146,11 +178,14 @@ async fn perform_socks5_handshake(
     receive_socks5_connect_response(stream).await
 }
 
+/// Offers the authentication methods this proxy can handle.
 async fn send_socks5_greeting(
     stream: &mut TcpStream,
     auth: &Socks5Auth,
 ) -> Result<()> {
     let methods: &[u8] = if auth.credentials.is_some() {
+        // Advertise none first: servers that accept it can skip the
+        // RFC 1929 exchange entirely.
         &[SOCKS5_AUTH_METHOD_NONE, SOCKS5_AUTH_METHOD_USER_PASS]
     } else {
         &[SOCKS5_AUTH_METHOD_NONE]
@@ -175,6 +210,7 @@ async fn send_socks5_greeting(
     Ok(())
 }
 
+/// Reads the method the server selected and rejects `0xFF`.
 async fn receive_socks5_greeting_response(
     stream: &mut TcpStream
 ) -> Result<u8> {
@@ -201,6 +237,7 @@ async fn receive_socks5_greeting_response(
     Ok(resp[1])
 }
 
+/// Sends RFC 1929 credentials and checks the one-byte status reply.
 async fn perform_user_pass_auth(
     stream: &mut TcpStream,
     auth: &Socks5Auth,
@@ -263,12 +300,20 @@ async fn perform_user_pass_auth(
     Ok(())
 }
 
+/// Destination encoded for the CONNECT request.
+///
+/// IP literals are sent as IP address types; everything else is sent as a
+/// domain name so that the SOCKS5 server does the DNS lookup.
 enum Socks5Address<'a> {
     Ipv4([u8; 4]),
     Ipv6([u8; 16]),
     Domain(&'a str),
 }
 
+/// Classifies a host as IPv4, IPv6 or a domain name.
+///
+/// Brackets around IPv6 literals are removed first so that the address
+/// parses; the brackets matter in URLs but not on the wire.
 fn classify_host(host: &str) -> Result<Socks5Address<'_>> {
     let bare = host
         .strip_prefix('[')
@@ -289,6 +334,7 @@ fn classify_host(host: &str) -> Result<Socks5Address<'_>> {
     Ok(Socks5Address::Domain(host))
 }
 
+/// Encodes and sends the `CONNECT` request for `host:port`.
 async fn send_socks5_connect_request(
     stream: &mut TcpStream,
     host: &str,
@@ -347,6 +393,8 @@ async fn send_socks5_connect_request(
         .context("Failed to flush SOCKS5 CONNECT")
 }
 
+/// Validates the `CONNECT` reply and consumes the bound address that
+/// follows it.
 async fn receive_socks5_connect_response(
     stream: &mut TcpStream
 ) -> Result<()> {
@@ -390,6 +438,10 @@ async fn receive_socks5_connect_response(
     read_socks5_bind_address(stream, resp_header[3]).await
 }
 
+/// Discards the address the server bound on its side.
+///
+/// The proxy never uses this address; it only has to read the bytes so
+/// that the next byte on the stream is the start of tunnel data.
 async fn read_socks5_bind_address(
     stream: &mut TcpStream,
     atyp: u8,

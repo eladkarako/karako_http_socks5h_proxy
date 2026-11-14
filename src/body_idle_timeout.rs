@@ -1,3 +1,10 @@
+//! Idle-timeout wrapper for streamed response bodies.
+//!
+//! A slow or stalled upstream must not pin a client connection forever.
+//! [`IdleTimeoutBody`] watches the gap between body frames and turns a
+//! stall into a body error, which ends the response cleanly instead of
+//! leaving the socket open.
+
 use hyper::body::{Body, Frame, SizeHint};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -21,6 +28,10 @@ pin_project_lite::pin_project! {
 }
 
 impl<B> IdleTimeoutBody<B> {
+    /// Wraps `body` and starts the idle timer immediately.
+    ///
+    /// The clock starts at construction, so the first frame must arrive
+    /// within `idle` as well.
     pub(crate) fn new(
         body: B,
         idle: Duration,
@@ -82,6 +93,8 @@ impl<B> Body for IdleTimeoutBody<B>
 }
 
 #[derive(Debug)]
+/// Error produced when the idle timer expires; surfaced through the body
+/// so hyper can abort the response.
 struct IdleTimeoutError(Duration);
 
 impl std::fmt::Display for IdleTimeoutError {

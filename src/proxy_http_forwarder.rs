@@ -1,3 +1,13 @@
+//! Translates inbound requests into upstream HTTP/1.1 requests.
+//!
+//! This is the forward-proxy core. It works out which origin the client
+//! meant, rebuilds the request line and `Host` for that origin, removes
+//! headers that must not cross a proxy, and streams the response back
+//! without buffering it.
+//!
+//! `CONNECT` does not pass through here: it needs a raw tunnel, so
+//! [`crate::http_connect_tunnel`] handles it instead.
+
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full};
@@ -26,18 +36,24 @@ pub(crate) type BoxBody = http_body_util::combinators::UnsyncBoxBody<
     Box<dyn std::error::Error + Send + Sync>,
 >;
 
+/// Body for responses that carry no payload, such as `CONNECT`.
 pub(crate) fn empty_body() -> BoxBody {
+    // `Empty` is infallible, so the error type can be mapped away
+    // without allocating a boxed error.
     Empty::<Bytes>::new()
         .map_err(|never: Infallible| match never {})
         .boxed_unsync()
 }
 
+/// Body for short, fully buffered responses such as error pages.
 pub(crate) fn full_body(body: impl Into<Bytes>) -> BoxBody {
     Full::new(body.into())
         .map_err(|never: Infallible| match never {})
         .boxed_unsync()
 }
 
+/// Wraps an upstream response body in the idle guard and erases its
+/// type, keeping the stream lazy.
 pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
     crate::body_idle_timeout::IdleTimeoutBody::new(
         body,
@@ -46,8 +62,11 @@ pub(crate) fn box_incoming(body: Incoming) -> BoxBody {
         .boxed_unsync()
 }
 
+/// Destination extracted from the request target.
 pub(crate) struct Target {
+    /// Host name or IP literal, with IPv6 addresses still bracketed.
     pub host: String,
+    /// Explicit port, or the scheme default when the client omitted one.
     pub port: u16,
 }
 
@@ -60,6 +79,8 @@ pub(crate) fn extract_target(
     req: &Request<Incoming>
 ) -> Result<Target> {
     let uri = req.uri();
+    // Absolute-form targets (proxy requests) carry their own origin.
+    // Origin-form targets fall back to the `Host` header below.
     if let Some(scheme) = uri.scheme_str() {
         match scheme {
             "http" => {}
@@ -115,6 +136,8 @@ pub(crate) fn extract_target(
     })
 }
 
+/// Port implied by the request scheme or method when the client did not
+/// spell one out.
 fn default_port(
     uri: &hyper::Uri,
     req: &Request<Incoming>,
@@ -162,6 +185,13 @@ pub(crate) fn via_value(version: http::Version) -> String {
     format!("{} {}", protocol, env!("CARGO_PKG_NAME"))
 }
 
+/// Rebuilds the client request as an absolute-form HTTP/1.1 request for
+/// the resolved origin.
+///
+/// `hyper` hands us the original request so the body can be streamed
+/// through untouched. Only the request line, `Host`, and hop-by-hop
+/// headers change; everything else, including `Content-Length`, is
+/// preserved.
 pub fn build_forward_request(
     method: &http::Method,
     uri: &hyper::Uri,
@@ -227,6 +257,7 @@ pub fn build_forward_request(
         .context("Failed to build forward request")
 }
 
+/// Formats the `Host` header for the upstream origin.
 fn host_header_value(
     host: &str,
     port: u16,
@@ -269,6 +300,8 @@ fn connection_header_tokens(
         .collect()
 }
 
+/// Returns whether a header belongs to this hop only and therefore must
+/// not be forwarded.
 fn is_hop_by_hop(
     name: &str,
     connection_tokens: &[String],
@@ -279,6 +312,8 @@ fn is_hop_by_hop(
         .any(|token| token == name)
 }
 
+/// Decides whether an upstream response header may be passed to the
+/// client.
 fn should_forward_response_header(
     name: &str,
     connection_tokens: &[String],
@@ -288,6 +323,11 @@ fn should_forward_response_header(
     !is_hop_by_hop(name, connection_tokens)
 }
 
+/// Sends a prepared request through the pooled upstream client and turns
+/// the response into a streamed [`BoxBody`].
+///
+/// `client_version` is the protocol the client used, which only affects
+/// the `Via` value. The returned body enforces the upstream idle timeout.
 pub async fn send_http_request(
     client: &crate::upstream_http_client::UpstreamClient,
     forward_req: Request<Incoming>,
