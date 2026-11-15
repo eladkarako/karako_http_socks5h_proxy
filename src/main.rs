@@ -81,7 +81,8 @@ const EOL: &str = "\n";
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = command_line_args::parse_and_validate()?;
-    let _log_guard = logging_output_setup::init(args.quiet, args.verbose);
+    let _log_guard =
+        logging_output_setup::init(args.quiet, args.verbose);
     runtime_buffer_tuning::init(runtime_buffer_tuning::Tuning {
         socket_recv_buffer: args.socket_recv_buffer_bytes(),
         socket_send_buffer: args.socket_send_buffer_bytes(),
@@ -325,7 +326,8 @@ async fn main() -> Result<()> {
         log_warn!(
             "CONNECT tunnels have a {}s idle timeout, so long-lived tunnels \
              still active after {}s will be aborted.",
-            crate::http_connect_tunnel::TUNNEL_IDLE_TIMEOUT.as_secs(),
+            crate::http_connect_tunnel::TUNNEL_IDLE_TIMEOUT
+                .as_secs(),
             SHUTDOWN_GRACE_PERIOD.as_secs()
         );
     }

@@ -15,8 +15,8 @@
 //! are the client's encrypted session.
 
 use http::header::{
-    HeaderMap, HeaderName, HeaderValue, CACHE_CONTROL, CONTENT_LENGTH,
-    CONTENT_TYPE, TRANSFER_ENCODING,
+    HeaderMap, HeaderName, HeaderValue, CACHE_CONTROL,
+    CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING,
 };
 use http::{Method, Response};
 use hyper::Uri;
@@ -103,7 +103,10 @@ impl ResponsePolicy {
     /// Order does not matter because the three features touch different
     /// header names, but running cache/CORS before stripping means a
     /// stripped header can never be re-added by accident.
-    pub(crate) fn apply(&self, response: &mut Response<BoxBody>) {
+    pub(crate) fn apply(
+        &self,
+        response: &mut Response<BoxBody>,
+    ) {
         if self.boostaler_cache {
             apply_stale_cache_control(response.headers_mut());
         }
@@ -145,21 +148,32 @@ fn apply_stale_cache_control(headers: &mut HeaderMap) {
         "stale-while-revalidate={}",
         STALE_WHILE_REVALIDATE_SECONDS
     ));
-    directives.push(format!(
-        "stale-if-error={}",
-        STALE_IF_ERROR_SECONDS
-    ));
-    if let Ok(value) = HeaderValue::from_str(&directives.join(", ")) {
+    directives
+        .push(format!("stale-if-error={}", STALE_IF_ERROR_SECONDS));
+    if let Ok(value) = HeaderValue::from_str(&directives.join(", "))
+    {
         headers.insert(CACHE_CONTROL, value);
     }
 }
 
 /// Replaces every CORS-related header with the permissive value.
 fn apply_permissive_cors(headers: &mut HeaderMap) {
-    set_header(headers, "access-control-allow-methods", CORS_ALLOWED_METHODS);
+    set_header(
+        headers,
+        "access-control-allow-methods",
+        CORS_ALLOWED_METHODS,
+    );
     set_header(headers, "access-control-allow-origin", "*");
-    set_header(headers, "access-control-allow-headers", CORS_ALLOWED_HEADERS);
-    set_header(headers, "access-control-expose-headers", CORS_ALLOWED_HEADERS);
+    set_header(
+        headers,
+        "access-control-allow-headers",
+        CORS_ALLOWED_HEADERS,
+    );
+    set_header(
+        headers,
+        "access-control-expose-headers",
+        CORS_ALLOWED_HEADERS,
+    );
     set_header(headers, "access-control-allow-credentials", "true");
     set_header(headers, "timing-allow-origin", "*");
     set_header(headers, "x-permitted-cross-domain-policies", "all");
@@ -172,7 +186,10 @@ fn set_header(
     value: &'static str,
 ) {
     headers.remove(name);
-    headers.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+    headers.insert(
+        HeaderName::from_static(name),
+        HeaderValue::from_static(value),
+    );
 }
 
 /// Drops the headers that restrict framing, scripting and transport
@@ -195,7 +212,11 @@ pub(crate) fn cross_domain_mock(
     if method == Method::CONNECT {
         return None;
     }
-    let file = uri.path().rsplit('/').next().unwrap_or_default();
+    let file = uri
+        .path()
+        .rsplit('/')
+        .next()
+        .unwrap_or_default();
     if file.eq_ignore_ascii_case("crossdomain.xml") {
         Some(CROSS_DOMAIN_XML)
     } else if file.eq_ignore_ascii_case("clientaccesspolicy.xml") {
@@ -210,7 +231,9 @@ pub(crate) fn cross_domain_mock(
 /// `Content-Length` is computed from the chosen body rather than copied
 /// from any upstream response, and `Transfer-Encoding` is dropped so the
 /// framing is unambiguous.
-pub(crate) fn cross_domain_response(body: &'static str) -> Response<BoxBody> {
+pub(crate) fn cross_domain_response(
+    body: &'static str
+) -> Response<BoxBody> {
     let length = HeaderValue::from_str(&body.len().to_string())
         .expect("body length is valid header text");
     let mut response = Response::builder()
@@ -219,6 +242,8 @@ pub(crate) fn cross_domain_response(body: &'static str) -> Response<BoxBody> {
         .header(CONTENT_LENGTH, length)
         .body(full_body(body))
         .expect("valid synthetic cross-domain response");
-    response.headers_mut().remove(TRANSFER_ENCODING);
+    response
+        .headers_mut()
+        .remove(TRANSFER_ENCODING);
     response
 }

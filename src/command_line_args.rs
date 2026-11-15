@@ -38,15 +38,15 @@ const BUFFER_RANGE_HINT: &str = "5 and 10240 KiB (5 KiB to 10 MiB)";
 #[command(
     about = env!("CARGO_PKG_DESCRIPTION"),
     long_about = concat!(
-        "HTTP-over-SOCKS5h forward proxy.\n\n",
-        "Listens for HTTP/1.1 and HTTP/2 clients and forwards their ",
-        "requests through an upstream SOCKS5h server. Host names travel ",
-        "to that server unresolved, so remote DNS is used.\n\n",
-        "Plain HTTP is forwarded directly; HTTPS and other TLS traffic ",
-        "must use CONNECT.\n\n",
-        "Example:\n",
-        "  karako_http_socks5h_proxy -p 18765 -u 9150\n",
-        "  curl -x http://127.0.0.1:18765 http://example.com/"
+    "HTTP-over-SOCKS5h forward proxy.\n\n",
+    "Listens for HTTP/1.1 and HTTP/2 clients and forwards their ",
+    "requests through an upstream SOCKS5h server. Host names travel ",
+    "to that server unresolved, so remote DNS is used.\n\n",
+    "Plain HTTP is forwarded directly; HTTPS and other TLS traffic ",
+    "must use CONNECT.\n\n",
+    "Example:\n",
+    "  karako_http_socks5h_proxy -p 18765 -u 9150\n",
+    "  curl -x http://127.0.0.1:18765 http://example.com/"
     )
 )]
 #[command(
@@ -313,7 +313,8 @@ fn resolve_socks5_password(args: &mut Args) -> Result<()> {
         );
     }
     if args.socks5_password.is_none() {
-        if let Ok(password) = std::env::var("KARAKO_SOCKS5_PASSWORD") {
+        if let Ok(password) = std::env::var("KARAKO_SOCKS5_PASSWORD")
+        {
             args.socks5_password = Some(password);
         }
     }

@@ -91,10 +91,7 @@ pub async fn connect_to_socks5_server(
         .await
     {
         Ok(result) => result.with_context(|| {
-            format!(
-                "Failed to connect to SOCKS5 server at {}",
-                addr
-            )
+            format!("Failed to connect to SOCKS5 server at {}", addr)
         })?,
         Err(_) => {
             return Err(ProxyError::Timeout {

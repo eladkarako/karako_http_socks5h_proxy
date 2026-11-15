@@ -19,12 +19,12 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 use tower_service::Service;
 
-use crate::tcp_socket_config::{
-    configure_tokio_socket, SocketConfiguration,
-};
 use crate::socks5_handshake_flow::{
     connect_to_socks5_server, establish_socks5_connection,
     Socks5Auth,
+};
+use crate::tcp_socket_config::{
+    configure_tokio_socket, SocketConfiguration,
 };
 
 /// How long an idle upstream connection stays in the pool.

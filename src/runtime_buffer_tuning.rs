@@ -39,5 +39,8 @@ pub(crate) fn init(tuning: Tuning) {
 
 /// Returns the published values, or the defaults if [`init`] has not run.
 pub(crate) fn get() -> Tuning {
-    TUNING.get().copied().unwrap_or_default()
+    TUNING
+        .get()
+        .copied()
+        .unwrap_or_default()
 }

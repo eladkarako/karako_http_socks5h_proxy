@@ -210,8 +210,57 @@ Options:
 
 <hr/>
 
+<details><summary><h3>🎚🎛 command line arguments</h3></summary>
+
+The table below lists all `20` arguments from the command line argument used by Rust's `clap` crate (`ARGS` struct),  
+with the short-help text from each doc comment, the default values,  
+and the constraints enforced in `parse_and_validate` and `resolve_socks5_password`.
+
+| Field | Short | Long Flag | Type | Default | Descriptio | Constraints and Validation |
+|---|---|---|---|---|---|---|
+| `http_port` | `-p` | `--http-port` | `u16` | `8765` | Port the HTTP proxy listens on for clients. Point clients at `http://<bind>:<http-port>`. This is the port a browser or `curl -x` should use, not the SOCKS5 port. | Must not equal the `upstream_host` and `upstream_port` address (checked in `parse_and_validate`). |
+| `upstream_port` | `-u` | `--upstream-port` | `u16` | `5678` | Port of the upstream SOCKS5 server. Usually a local Tor instance (`9050`, or `9150` for the Tor Browser bundle). The proxy never speaks SOCKS5 to clients. | Combined with `upstream_host` and checked against the listener address. |
+| `bind` | `-b` | `--bind` | `IpAddr` | `127.0.0.1` | Address to bind the HTTP proxy listener on. Defaults to loopback. Any non-loopback address requires `--allow-non-local`, because the listener exposes the upstream SOCKS5 server to everyone who can reach it. | Non-loopback values are rejected unless `--allow-non-local` is set. |
+| `upstream_host` | None | `--upstream-host` | `IpAddr` | `127.0.0.1` | Address of the upstream SOCKS5 server. Separate from `--bind` so the proxy can listen on one interface while reaching the SOCKS5 server over another. | Must differ from the listener address and port. |
+| `socks5_username` | None | `--socks5-username` | `Option<String>` | `None` | Username for SOCKS5 username/password authentication. Requires a password from `--socks5-password`, `--socks5-password-file`, or `KARAKO_SOCKS5_PASSWORD`. When this is omitted, only the no-authentication method is offered. | Bails if no password is resolved from any source. |
+| `socks5_password` | None | `--socks5-password` | `Option<String>` | `None` | Password for SOCKS5 username/password authentication. Prefer `--socks5-password-file` or `KARAKO_SOCKS5_PASSWORD`: command-line arguments are visible to other users through the process list. | Conflicts with `--socks5-password-file`. Bails if provided without `--socks5-username`. |
+| `socks5_password_file` | None | `--socks5-password-file` | `Option<PathBuf>` | `None` | File containing the SOCKS5 password. One trailing newline (LF or CRLF) is stripped. Takes precedence over `KARAKO_SOCKS5_PASSWORD`, which takes precedence over `--socks5-password`. | Value name `PATH`. Read failures are reported with the file path. |
+| `proxy_username` | None | `--proxy-username` | `Option<String>` | `None` | Username HTTP clients must send via Proxy-Authorization. Turns the listener into an authenticated proxy. Requires `--proxy-password`. Clients then use `Proxy-Authorization: Basic <base64(user:pass)>`, which `curl` does automatically for `-x http://user:pass@host:port`. | Requires `--proxy-password` (enforced by clap). |
+| `proxy_password` | None | `--proxy-password` | `Option<String>` | `None` | Password HTTP clients must send via Proxy-Authorization. Requests without a matching header receive `407 Proxy Authentication Required` with a Basic challenge. | Requires `--proxy-username` (enforced by clap). |
+| `allow_non_local` | None | `--allow-non-local` | `bool` | `false` | Allow binding to a non-loopback address. Without this flag the proxy refuses to start on a public interface. Anyone who can reach the listener can use the upstream SOCKS5 server, so pair this with client authentication. | Required when `bind` is not loopback. |
+| `no_via` | None | `--no-via` | `bool` | `false` | Omit the Via header from forwarded messages. `Via` identifies this proxy in requests and responses (RFC 9110). Use this when the proxy should stay invisible to the origin server. | None |
+| `x_forwarded_for` | None | `--x-forwarded-for` | `bool` | `false` | Add X-Forwarded-For with the client address. A client-supplied `X-Forwarded-For` is discarded and replaced, so the header cannot be used to spoof the original address. | None |
+| `boostaler_cache` | None | `--boostaler-cache` (alias `--stale-cache`) | `bool` | `false` | Extend Cache-Control with stale-while-revalidate and stale-if-error. Removes any existing `stale-while-revalidate`/`stale-if-error` directives, then appends `stale-while-revalidate=86400` (one day) and `stale-if-error=259200` (three days) to every response. A homage to the historic "Boostaler" browser extension, which aimed to keep pages usable while a site was slow or down. | None |
+| `cors_allow_all` | None | `--cors-allow-all` (alias `--cors`) | `bool` | `false` | Add permissive CORS headers to every response. Replaces existing values for Access-Control-Allow-Methods, -Origin, -Headers, -Allow-Credentials, Expose-Headers, Timing-Allow-Origin and X-Permitted-Cross-Domain-Policies, on every method including non-OPTIONS. Any path ending in `CrossDomain.xml` or `ClientAccessPolicy.xml` (any letter case) receives a synthetic 200 policy file instead of the upstream response. CONNECT tunnels carry opaque TLS after the proxy's 200, so headers inside the tunnel cannot be changed. | None |
+| `strip_security_headers` | None | `--strip-security-headers` (alias `--strip-csp`) | `bool` | `false` | Remove CSP and related security headers from every response. Strips P3P, Alt-Svc, Strict-Transport-Security, X-Frame-Options, X-XSS-Protection, X-Content-Type-Options, Content-Security-Policy, Referrer-Policy and Public-Key-Pins-Report-Only, matching names in any letter case. | None |
+| `tunnel_buffer_size` | None | `--tunnel-buffer-size` | `u16` | `32` | Copy buffer size per direction for CONNECT tunnels, in KiB. Each direction of a tunnel gets its own buffer of this size. The default suits most links; raise it for high-bandwidth tunnels on high-latency paths. Accepted range: 5 to 10240 KiB (5 KiB to 10 MiB). | Value name `KIB`. Must be between `5` and `10240`. |
+| `socket_recv_buffer` | None | `--socket-recv-buffer` | `Option<u32>` | `None` (per-role: `64`, `256`, or `512` KiB) | Override SO_RCVBUF for all sockets, in KiB (default: 64-512 by role). Applies to the listener, SOCKS5 handshakes, upstream HTTP connections, and tunnels. Without this flag each role keeps its own default: 64 KiB for handshakes, 256 KiB for inbound and HTTP request sockets, and 512 KiB for CONNECT tunnels. Accepted range: 5 to 10240 KiB (5 KiB to 10 MiB). | Value name `KIB`. Must be between `5` and `10240`. |
+| `socket_send_buffer` | None | `--socket-send-buffer` | `Option<u32>` | `None` (per-role: `64`, `256`, or `512` KiB) | Override SO_SNDBUF for all sockets, in KiB (default: 64-512 by role). Same coverage and defaults as `--socket-recv-buffer`: 64 KiB for handshakes, 256 KiB for inbound and HTTP request sockets, and 512 KiB for CONNECT tunnels. Accepted range: 5 to 10240 KiB (5 KiB to 10 MiB). The kernel may clamp the requested value; the effective size is logged with `-v`. | Value name `KIB`. Must be between `5` and `10240`. |
+| `verbose` | `-v` | `--verbose` | `u8` (count) | `0` | Increase log verbosity. No flag logs one line per request. `-v` adds handshake, socket and timing details. `-vv` also dumps SOCKS5 packets as hex. | Conflicts with `--quiet`. |
+| `quiet` | `-q` | `--quiet` | `bool` | `false` | Only log errors. Mutually exclusive with `--verbose`. Useful when the proxy runs in the background and only failures are interesting. | Conflicts with `--verbose` (enforced by clap). |
+
+
+</details>
+
 <hr/>
 
+<details><summary><h3>🧙 socket configuration, buffer sizes, idle time - default values by role</h3></summary>
+
+The table below covers all four `SocketConfiguration` constants,  
+with the rustdoc descriptions and the buffer, cork, quick ACK, and keepalive values from each `struct` literal.  
+Buffer sizes are shown in KB, where `256 * 1024` is `256 KB` (`262,144 bytes`).
+
+
+| Const Name | Name | Description | Recv Buffer | Send Buffer | TCP Cork (Android/Linux only) | TCP Quick ACK | Keepalive Idle | Keepalive Interval | Keepalive Retries |
+|---|---|---|---|---|---|---|---|---|---|
+| `CLIENT_INBOUND` | ClientInbound | Sockets accepted from clients: mostly request/response headers. | `256 KB` | `256 KB` | false | true | `45 s` | `15 s` | `3` |
+| `SOCKS_HANDSHAKE` | SocksHandshake | Sockets to the SOCKS5 server while the handshake is running. | `64 KB` | `64 KB` | false | true | `30 s` | `10 s` | `3` |
+| `SOCKS_TUNNEL` | SocksTunnel | Sockets carrying tunneled bytes after a successful CONNECT. These see sustained bidirectional traffic, so they get the largest buffers and the longest keepalive idle time. | `512 KB` | `512 KB` | false | true | `120 s` | `30 s` | `3` |
+| `SOCKS_HTTP_REQUEST` | SocksHttpRequest | Pooled sockets used for forwarded HTTP requests. | `256 KB` | `256 KB` | false | true | `30 s` | `10 s` | `5` |
+
+</details>
+
+<hr/>
 <details><summary><h3>🧪 Manual test recipes</h3></summary>
 
 The examples below assume a SOCKS5h server on `127.0.0.1:9150` and start the proxy on port `18765`:

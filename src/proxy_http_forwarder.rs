@@ -119,7 +119,9 @@ pub(crate) fn extract_target(
             )
         })?;
     let host_str = host_header.to_str().map_err(|_| {
-        ProxyError::BadRequest("Host header is not valid ASCII".to_string())
+        ProxyError::BadRequest(
+            "Host header is not valid ASCII".to_string(),
+        )
     })?;
     let authority: http::uri::Authority =
         host_str.parse().map_err(|_| {
@@ -155,8 +157,8 @@ fn default_port(
 pub(crate) fn loggable_target(uri: &hyper::Uri) -> &str {
     if uri.path().is_empty() {
         uri.authority()
-            .map(|authority| authority.as_str())
-            .unwrap_or("/")
+           .map(|authority| authority.as_str())
+           .unwrap_or("/")
     } else {
         uri.path()
     }
@@ -238,19 +240,15 @@ pub fn build_forward_request(
         }
         forward_req = forward_req.header(name, value);
     }
-    forward_req = forward_req.header(
-        http::header::HOST,
-        host_header_value(host, port),
-    );
+    forward_req = forward_req
+        .header(http::header::HOST, host_header_value(host, port));
     if forwarding.add_via {
         forward_req = forward_req
             .header(http::header::VIA, via_value(client_version));
     }
     if forwarding.add_x_forwarded_for {
-        forward_req = forward_req.header(
-            "x-forwarded-for",
-            client_addr.ip().to_string(),
-        );
+        forward_req = forward_req
+            .header("x-forwarded-for", client_addr.ip().to_string());
     }
     forward_req
         .body(body)
@@ -357,8 +355,9 @@ pub async fn send_http_request(
     )
         .await
     {
-        Ok(result) => result
-            .context("Failed to send HTTP/1.1 request through SOCKS5")?,
+        Ok(result) => result.context(
+            "Failed to send HTTP/1.1 request through SOCKS5",
+        )?,
         Err(_) => {
             return Err(ProxyError::Timeout {
                 phase: "waiting for upstream response headers",

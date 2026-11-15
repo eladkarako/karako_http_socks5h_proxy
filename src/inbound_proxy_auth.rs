@@ -5,7 +5,9 @@
 //! value is computed once at startup and compared byte for byte.
 
 use base64::Engine;
-use http::header::{HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION};
+use http::header::{
+    HeaderValue, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION,
+};
 use hyper::body::Incoming;
 use hyper::{Request, Response};
 
@@ -33,8 +35,9 @@ impl ProxyAuth {
         match (username, password) {
             (Some(username), Some(password)) => {
                 let raw = format!("{}:{}", username, password);
-                let encoded = base64::engine::general_purpose::STANDARD
-                    .encode(raw);
+                let encoded =
+                    base64::engine::general_purpose::STANDARD
+                        .encode(raw);
                 let value = HeaderValue::from_str(&format!(
                     "Basic {}",
                     encoded
@@ -63,9 +66,9 @@ impl ProxyAuth {
             return true;
         };
         req.headers()
-            .get(PROXY_AUTHORIZATION)
-            .map(|value| value == expected)
-            .unwrap_or(false)
+           .get(PROXY_AUTHORIZATION)
+           .map(|value| value == expected)
+           .unwrap_or(false)
     }
 }
 

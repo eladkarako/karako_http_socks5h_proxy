@@ -17,13 +17,13 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
-use crate::proxy_http_forwarder::{
-    full_body, BoxBody, ForwardingOptions, StatusCode,
-};
 use crate::http1_request_handler::handle_http1_request;
 use crate::http2_request_handler::handle_h2_request;
 use crate::inbound_proxy_auth::{challenge, ProxyAuth};
 use crate::proxy_error_types::ProxyError;
+use crate::proxy_http_forwarder::{
+    full_body, BoxBody, ForwardingOptions, StatusCode,
+};
 use crate::response_header_policy::{self, ResponsePolicy};
 use crate::socks5_handshake_flow::Socks5Auth;
 use crate::upstream_http_client::UpstreamClient;
@@ -181,20 +181,20 @@ impl Service<Request<Incoming>> for ProxyService {
 /// `BadRequest` keeps its message because it describes a client mistake;
 /// upstream failures use fixed text so internal details stay in the logs.
 fn error_response(error: &anyhow::Error) -> Response<BoxBody> {
-    let (status, message) =
-        match error.downcast_ref::<ProxyError>() {
-            Some(ProxyError::BadRequest(message)) => {
-                (StatusCode::BAD_REQUEST, message.clone())
-            }
-            Some(ProxyError::Timeout { .. }) => (
-                StatusCode::GATEWAY_TIMEOUT,
-                "upstream request timed out".to_string(),
-            ),
-            None => (
-                StatusCode::BAD_GATEWAY,
-                "upstream request failed".to_string(),
-            ),
-        };
+    let (status, message) = match error.downcast_ref::<ProxyError>()
+    {
+        Some(ProxyError::BadRequest(message)) => {
+            (StatusCode::BAD_REQUEST, message.clone())
+        }
+        Some(ProxyError::Timeout { .. }) => (
+            StatusCode::GATEWAY_TIMEOUT,
+            "upstream request timed out".to_string(),
+        ),
+        None => (
+            StatusCode::BAD_GATEWAY,
+            "upstream request failed".to_string(),
+        ),
+    };
     let body = full_body(message);
     Response::builder()
         .status(status)

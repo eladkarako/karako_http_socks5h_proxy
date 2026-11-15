@@ -10,7 +10,8 @@ use hyper::body::{Body, Incoming};
 
 use crate::proxy_http_forwarder;
 use crate::proxy_http_forwarder::{
-    build_forward_request, extract_target, BoxBody, ForwardingOptions,
+    build_forward_request, extract_target, BoxBody,
+    ForwardingOptions,
 };
 use crate::socks5_handshake_flow::Socks5Auth;
 use crate::upstream_http_client::UpstreamClient;

@@ -16,17 +16,18 @@ use tokio_io_timeout::TimeoutStream;
 use crate::proxy_http_forwarder::{
     empty_body, BoxBody, ForwardingOptions,
 };
-use crate::tcp_socket_config::{
-    configure_tokio_socket, SocketConfiguration,
-};
 use crate::socks5_handshake_flow::{
     connect_to_socks5_server, establish_socks5_connection,
     Socks5Auth,
 };
+use crate::tcp_socket_config::{
+    configure_tokio_socket, SocketConfiguration,
+};
 
 /// How long a tunnel may sit without any traffic in either direction
 /// before it is torn down.
-pub(crate) const TUNNEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+pub(crate) const TUNNEL_IDLE_TIMEOUT: Duration =
+    Duration::from_secs(300);
 
 /// Handles a `CONNECT` request by opening a SOCKS5 tunnel to the
 /// requested authority and upgrading the client connection to a raw
@@ -134,9 +135,8 @@ pub async fn handle_tunnel(
         host,
         port
     );
-    let mut client = TimeoutStream::new(
-        hyper_util::rt::TokioIo::new(upgraded),
-    );
+    let mut client =
+        TimeoutStream::new(hyper_util::rt::TokioIo::new(upgraded));
     client.set_read_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     client.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     // `TimeoutStream` is not `Unpin`, and the copy needs `&mut` handles
@@ -148,7 +148,8 @@ pub async fn handle_tunnel(
     target.set_write_timeout(Some(TUNNEL_IDLE_TIMEOUT));
     let mut target = Box::pin(target);
 
-    let buffer_size = crate::runtime_buffer_tuning::get().tunnel_buffer_size;
+    let buffer_size =
+        crate::runtime_buffer_tuning::get().tunnel_buffer_size;
     let (client_to_target, target_to_client) =
         tokio::io::copy_bidirectional_with_sizes(
             &mut client,
