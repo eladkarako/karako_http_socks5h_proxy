@@ -6,9 +6,8 @@
 
 🧰 You can use it with [`aria2c`](https://github.com/aria2/aria2) or [`aria2-next`](https://github.com/AnInsomniacy/aria2-next), [`yt-dlp`](https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest), [`ffmpeg`](https://github.com/nanake/ffmpeg-tinderbox/releases/latest), [`wget`](https://eternallybored.org/misc/wget/), [`curl`](https://curl.se/download.html#Win64),  
 
-and pretty much any program that recognises the environment variables `HTTP_PROXY`.  
-( (Proxy Environment Variables: Cheat Sheet)[https://gist.github.com/eladkarako/d4de26de1257cfc833edff87e48cf2af#file-proxy-environment-variables-cheat-sheet-http_proxy-https_proxy-no_proxy-all_proxy-md] )
-
+and pretty much any program that recognises the environment variable `HTTP_PROXY`  
+see - (Proxy Environment Variables: Cheat Sheet)[https://gist.github.com/eladkarako/d4de26de1257cfc833edff87e48cf2af#file-proxy-environment-variables-cheat-sheet-http_proxy-https_proxy-no_proxy-all_proxy-md]  
 
 <hr/>
 
