@@ -390,6 +390,36 @@ karako_http_socks5h_proxy -p 18765 -u 9150 --cors-allow-all
 curl -s -D - -x http://127.0.0.1:18765 http://example.com/CrossDomain.xml
 ```
 
+the actual content that would be served is constant and very permissive (intended for web-development and testings):  
+
+`ClientAccessPolicy.xml`:  
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<access-policy>
+  <cross-domain-access>
+    <policy>
+      <allow-from http-request-headers="*">
+        <domain uri="*"/>
+      </allow-from>
+      <grant-to>
+        <resource path="/" include-subpaths="true"/>
+      </grant-to>
+    </policy>
+  </cross-domain-access>
+</access-policy>
+```
+
+`CrossDomain.xml`:  
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE cross-domain-policy SYSTEM "http://www.adobe.com/xml/dtds/cross-domain-policy.dtd">
+<cross-domain-policy>
+  <site-control permitted-cross-domain-policies="all"/>
+  <allow-access-from domain="*" to-ports="*" secure="false"/>
+  <allow-http-request-headers-from domain="*" headers="*" secure="false"/>
+</cross-domain-policy>
+```
+
 Both bodies are compiled into the binary. The Flash policy permits `domain="*"` and `to-ports="*"`; the Silverlight policy grants `domain uri="*"` access to `/` including subpaths. Paths that merely contain the name, such as `/notCrossDomain.xml`, are forwarded upstream unchanged.
 
 </details>
