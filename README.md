@@ -11,7 +11,10 @@ see - [Proxy Environment Variables: Cheat Sheet](https://gist.github.com/eladkar
 
 <hr/>
 
-<details><summary><h3>📖 --help entries</h3></summary>
+<details><summary><h3>📖 <code>--help</code> entries</h3></summary>
+
+see `🎚🎛 command line arguments` below for same information, in table form.
+
 
 ```txt
 HTTP-over-SOCKS5h forward proxy.
@@ -192,24 +195,6 @@ Options:
 
 <hr/>
 
-<details><summary><h3>🧭 Setup & defaults</h3></summary>
-
-🌍 Most programs will use HTTP/1.1 `CONNECT`, and once the TCP tunnel is established it supports any traffic that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).
-
-🦊 You can set Firefox and Edge to use it as an HTTP proxy, and it works very well.
-
-📍 By default the upstream `SOCKS5h` server is expected on `127.0.0.1`; use `--upstream-host` if it runs elsewhere.
-
-🔗 The HTTP listener binds to `127.0.0.1` by default; use `--bind` for another address such as `::1` or `0.0.0.0`.
-
-🏠 Both the proxy and the upstream server normally run on the same machine, but they no longer have to.
-
-📦 Binaries are provided and support many OS and architectures.
-
-</details>
-
-<hr/>
-
 <details><summary><h3>🎚🎛 command line arguments</h3></summary>
 
 The table below lists all `20` arguments from the command line argument used by Rust's `clap` crate (`ARGS` struct),  
@@ -239,6 +224,24 @@ and the constraints enforced in `parse_and_validate` and `resolve_socks5_passwor
 | `verbose` | `-v` | `--verbose` | `u8` (count) | `0` | Increase log verbosity. No flag logs one line per request. `-v` adds handshake, socket and timing details. `-vv` also dumps SOCKS5 packets as hex. | Conflicts with `--quiet`. |
 | `quiet` | `-q` | `--quiet` | `bool` | `false` | Only log errors. Mutually exclusive with `--verbose`. Useful when the proxy runs in the background and only failures are interesting. | Conflicts with `--verbose` (enforced by clap). |
 
+
+</details>
+
+<hr/>
+
+<details><summary><h3>🧭 Setup & defaults</h3></summary>
+
+🌍 Most programs will use HTTP/1.1 `CONNECT`, and once the TCP tunnel is established it supports any traffic that the `SOCKS5h` upstream server would support (HTTP, HTTPS, ...).
+
+🦊 You can set Firefox and Edge to use it as an HTTP proxy, and it works very well.
+
+📍 By default the upstream `SOCKS5h` server is expected on `127.0.0.1`; use `--upstream-host` if it runs elsewhere.
+
+🔗 The HTTP listener binds to `127.0.0.1` by default; use `--bind` for another address such as `::1` or `0.0.0.0`.
+
+🏠 Both the proxy and the upstream server normally run on the same machine, but they no longer have to.
+
+📦 Binaries are provided and support many OS and architectures.
 
 </details>
 
