@@ -1,4 +1,4 @@
-# 🔌 karako_http_socks5h_proxy
+# `karako_http_socks5h_proxy`
 
 <hr/>
 
